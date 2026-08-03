@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "binviz"
+version = "0.0.1"
+description = "Binary visualiser & triage tool: linked interactive views over a shared address-space model"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "lief==1.0.0",
+    "capstone==5.0.9",
+    "numpy==2.5.1",
+    "fastapi==0.141.1",
+    "uvicorn==0.52.1",
+    "pillow==12.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    # zig cc is the cross-compiler used to build the ELF corpus samples on
+    # hosts without a native Linux toolchain (the samples are parsed, never run)
+    "ziglang==0.16.0",
+]
+
+[project.scripts]
+binviz = "binviz.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "oracle: differential tests requiring radare2 (deselect with '-m \"not oracle\"')",
+]

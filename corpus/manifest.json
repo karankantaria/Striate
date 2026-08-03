@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "notes": {
+    "u12_packing": "big-endian 12-bit pairs: byte0=a>>4; byte1=((a&15)<<4)|(b>>8); byte2=b&255",
+    "toolchain": "zig cc (pip ziglang) cross-targeting linux; samples are parsed, never executed",
+    "expect": "per-sample `expect` blocks are ground truth for later phases; P0 tests only assert format/size/content-structure keys"
+  },
+  "samples": {
+    "zeros.bin": {
+      "format": "raw",
+      "size": 1048576,
+      "expect": { "entropy_floor": 0.0, "byte_class": "all class 0 (null)" }
+    },
+    "urandom.bin": {
+      "format": "raw",
+      "size": 1048576,
+      "expect": {
+        "entropy_4096_mean": [7.98, 8.0],
+        "entropy_256_mean": [7.0, 7.3],
+        "bigram_nonzero_fraction_min": 0.99
+      }
+    },
+    "ascii.txt": {
+      "format": "raw",
+      "size_min": 1048576,
+      "size_max": 1053000,
+      "expect": {
+        "entropy_bits_per_byte": [3.9, 4.8],
+        "printable_ratio_min": 0.95,
+        "bigram_ascii_box_mass_min": 0.95
+      }
+    },
+    "pattern.bin": {
+      "format": "raw",
+      "size": 262144,
+      "pattern_hex": "00112233445566778899aabbccddeeff",
+      "expect": {
+        "bigram_nonzero_cells": 16,
+        "trigram_sparse_points": 16,
+        "entropy_bits_per_byte_exact": 4.0
+      }
+    },
+    "repeats.bin": {
+      "format": "raw",
+      "size": 458752,
+      "block_size": 65536,
+      "block_offsets": [65536, 196608, 327680],
+      "expect": { "dotplot_offdiagonal_bands": 3 }
+    },
+    "ramp16.bin": {
+      "format": "raw",
+      "size": 262144,
+      "expect": {
+        "as_u8": "near-uniform histogram",
+        "as_u16le": "monotone ramp, ~256 distinct quantised bins, bigram collapses to diagonal"
+      }
+    },
+    "floats.bin": {
+      "format": "raw",
+      "size": 1048576,
+      "f32_count": 262144,
+      "sine_periods": 300,
+      "expect": { "as_f32le": "arcsine-shaped histogram, values in [-1,1], no NaN" }
+    },
+    "bayer_raw.bin": {
+      "format": "raw",
+      "size": 460800,
+      "width": 640,
+      "height": 480,
+      "bits": 12,
+      "cfa_phase": "RGGB",
+      "expect": {
+        "correct_phase_smooth": true,
+        "stride_suggestion_bytes": 960,
+        "triage_embedded_image_likely": true
+      }
+    },
+    "rgb_raw.bin": {
+      "format": "raw",
+      "size": 230400,
+      "width": 320,
+      "height": 240,
+      "bar_width": 40,
+      "bars_rgb": [
+        [255, 255, 255], [255, 255, 0], [0, 255, 255], [0, 255, 0],
+        [255, 0, 255], [255, 0, 0], [0, 0, 255], [0, 0, 0]
+      ],
+      "expect": { "stride_suggestion_pixels": 320 }
+    },
+    "sample.png": {
+      "format": "png",
+      "expect": { "triage_verdict": "non_executable", "not_likely_packed": true }
+    },
+    "sample.zip": {
+      "format": "zip",
+      "expect": { "triage_verdict": "non_executable", "not_likely_packed": true }
+    },
+    "hello_O0": {
+      "format": "elf",
+      "arch": "x86_64",
+      "bits": 64,
+      "expect": {
+        "has_symtab": true,
+        "recursive_descent_from_entry_reaches": "main"
+      }
+    },
+    "hello_O2": {
+      "format": "elf",
+      "arch": "x86_64",
+      "bits": 64,
+      "expect": {
+        "has_symtab": true,
+        "text_classify_code_ratio_min": 0.8,
+        "triage_verdict": "likely_benign_binary"
+      }
+    },
+    "hello_static": {
+      "format": "elf",
+      "arch": "x86_64",
+      "bits": 64,
+      "size_min": 262144,
+      "expect": { "many_functions": true, "objdump_differential_target": 1.0 }
+    },
+    "hello_stripped": {
+      "format": "elf",
+      "arch": "x86_64",
+      "bits": 64,
+      "stripped_twin_of": "hello_O2",
+      "expect": { "function_recall_min_vs_twin": 0.75 }
+    },
+    "hello_upx": {
+      "format": "elf",
+      "arch": "x86_64",
+      "bits": 64,
+      "packed_with": "upx-5.2.0 -9",
+      "expect": {
+        "parse_warnings_min": 1,
+        "packed_region_entropy_4096_min": 7.7,
+        "triage_verdict": "likely_packed",
+        "triage_findings_include": ["HIGH_ENTROPY_EXEC", "IMPORT_STARVED"]
+      }
+    },
+    "switchy": {
+      "format": "elf",
+      "arch": "x86_64",
+      "bits": 64,
+      "switch_cases": 20,
+      "expect": { "jump_table_targets_or_one_unresolved": 20 }
+    },
+    "hello_arm64": {
+      "format": "elf",
+      "arch": "arm64",
+      "bits": 64,
+      "optional": true,
+      "expect": { "arch_dispatch": "aarch64" }
+    },
+    "hello_thumb": {
+      "format": "elf",
+      "arch": "arm",
+      "bits": 32,
+      "optional": true,
+      "expect": { "arch_ranges_from_mapping_symbols": true }
+    },
+    "hello_pe.exe": {
+      "format": "pe",
+      "arch": "x86_64",
+      "bits": 64,
+      "optional": true,
+      "expect": { "section_alignment_ne_file_alignment": true }
+    }
+  }
+}
