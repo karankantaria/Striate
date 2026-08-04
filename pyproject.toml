@@ -20,6 +20,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==9.1.1",
+    # independent x86 decoder used as the differential-test oracle where
+    # binutils (objdump) is unavailable, e.g. plain Windows hosts
+    "iced-x86==1.21.0",
     # zig cc is the cross-compiler used to build the ELF corpus samples on
     # hosts without a native Linux toolchain (the samples are parsed, never run)
     "ziglang==0.16.0",

@@ -1,7 +1,7 @@
 """binviz command-line interface.
 
 Subcommands land phase by phase: probe (P0), model (P1), signal/hist (P2),
-surface (P3), cfg (P5), triage/serve (P6+).
+surface (P3), disasm (P4), cfg (P5), triage/serve (P6+).
 """
 
 from __future__ import annotations
@@ -57,6 +57,25 @@ def main(argv: list[str] | None = None) -> int:
     p_stride.add_argument("--end", type=int, default=-1)
     p_stride.add_argument("--top", type=int, default=3)
 
+    p_dis = sub.add_parser("disasm", help="decode instructions (recursive "
+                           "descent from entry, or linear sweep of a range)")
+    p_dis.add_argument("file")
+    p_dis.add_argument("--linear", action="store_true",
+                       help="linear sweep instead of recursive descent")
+    p_dis.add_argument("--start", type=int, default=None,
+                       help="file offset (linear mode; default: .text)")
+    p_dis.add_argument("--end", type=int, default=None)
+    p_dis.add_argument("--va", type=lambda s: int(s, 0), action="append",
+                       default=[], help="extra seed VA (repeatable)")
+    p_dis.add_argument("--sym", action="append", default=[],
+                       help="extra seed symbol name (repeatable)")
+    p_dis.add_argument("--no-entry", action="store_true",
+                       help="do not seed from the entry point")
+    p_dis.add_argument("--arch", help="arch override for raw/headerless input")
+    p_dis.add_argument("--limit", type=int, default=40,
+                       help="max instructions to print (0 = all)")
+    p_dis.add_argument("--json", action="store_true")
+
     p_hist = sub.add_parser("hist", help="n-gram histogram of a file")
     p_hist.add_argument("file")
     p_hist.add_argument("--n", type=int, default=1, choices=(1, 2, 3))
@@ -96,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "signal":
         return _cmd_signal(args)
+    if args.command == "disasm":
+        return _cmd_disasm(args)
     if args.command == "hist":
         return _cmd_hist(args)
     if args.command == "surface":
@@ -174,6 +195,88 @@ def _cmd_stride(args) -> int:
     json.dump({"file": args.file, "mode": args.mode,
                "candidates": _jsonable(cands)}, sys.stdout, indent=2)
     print()
+    return 0
+
+
+def _cmd_disasm(args) -> int:
+    from .disasm import linear_sweep, mode_for_model, recursive_descent
+    from .loader import MappedFile
+    from .parse import parse as parse_binary
+
+    model = parse_binary(args.file, arch=args.arch)
+    mode = mode_for_model(model)
+    if mode is None:
+        print(f"binviz: no decoder for arch {model.arch!r}; "
+              f"use --arch to override", file=sys.stderr)
+        return 1
+
+    info: dict = {}
+    with MappedFile.open(args.file) as mf:
+        if args.linear:
+            if args.start is not None:
+                start = args.start
+                end = args.end if args.end is not None else mf.size
+            else:  # default to .text (or the whole file if there is none)
+                text = next((r for r in model.regions if r.name == ".text"), None)
+                start = text.file_off if text else 0
+                end = start + text.file_size if text else mf.size
+            va = model.off_to_va(start)
+            if va is None:
+                va = start
+            insns = linear_sweep(bytes(mf.view[start:end]), va, mode)
+        else:
+            seeds = [] if args.no_entry or model.entry_va is None \
+                else [model.entry_va]
+            seeds += args.va
+            by_name = {s.name: s.va for s in model.symbols}
+            for name in args.sym:
+                if name not in by_name:
+                    print(f"binviz: no symbol {name!r}", file=sys.stderr)
+                    return 1
+                seeds.append(by_name[name])
+            if not seeds:
+                print("binviz: no seeds (stripped + --no-entry?)",
+                      file=sys.stderr)
+                return 1
+            insns = recursive_descent(mf.view, model, seeds, info=info)
+
+    ordered = sorted(insns.values(), key=lambda i: i.va)
+    n_invalid = sum(1 for i in ordered if i.is_invalid)
+    summary = {
+        "file": args.file, "mode": mode,
+        "strategy": "linear" if args.linear else "recursive",
+        "instructions": len(ordered), "invalid": n_invalid,
+    }
+    if info:
+        summary.update(
+            indirect_jumps=len(info["indirect_jumps"]),
+            pointer_seeds=len(info["pointer_seeds"]),
+            decode_errors=len(info["decode_errors"]),
+            truncated=info["truncated"],
+        )
+    if args.json:
+        limit = args.limit if args.limit > 0 else len(ordered)
+        summary["insns"] = [i.to_json() for i in ordered[:limit]]
+        json.dump(summary, sys.stdout, indent=2)
+        print()
+        return 0
+    for k, v in summary.items():
+        print(f"{k}: {v}")
+    limit = args.limit if args.limit > 0 else len(ordered)
+    prev_end = None
+    for i in ordered[:limit]:
+        if prev_end is not None and i.va != prev_end:
+            print("  ...")
+        marks = ""
+        if i.targets:
+            marks = "  -> " + ", ".join(f"{t:#x}" for t in i.targets)
+        elif i.is_indirect:
+            marks = "  -> ?"
+        print(f"  {i.va:#010x}  {i.bytes_.hex():<20} {i.mnemonic} "
+              f"{i.op_str}{marks}")
+        prev_end = i.end_va
+    if len(ordered) > limit:
+        print(f"  ... {len(ordered) - limit} more (raise --limit)")
     return 0
 
 
