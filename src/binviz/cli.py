@@ -26,6 +26,21 @@ def main(argv: list[str] | None = None) -> int:
     p_model.add_argument("--json", action="store_true", help="full model as JSON")
     p_model.add_argument("--arch", help="arch override for raw/headerless input")
 
+    p_signal = sub.add_parser("signal", help="compute a named signal over a file")
+    p_signal.add_argument("file")
+    p_signal.add_argument("--name", default="entropy_4096")
+    p_signal.add_argument("--png", help="render to PNG (min/max envelope + mean)")
+    p_signal.add_argument("--json", action="store_true",
+                          help="print summary stats as JSON")
+
+    p_hist = sub.add_parser("hist", help="n-gram histogram of a file")
+    p_hist.add_argument("file")
+    p_hist.add_argument("--n", type=int, default=1, choices=(1, 2, 3))
+    p_hist.add_argument("--dtype", default="u8")
+    p_hist.add_argument("--mode", default="log1p",
+                        choices=("log1p", "rank", "sqrt", "linear"))
+    p_hist.add_argument("--png", help="render to PNG (n=2 only)")
+
     args = parser.parse_args(argv)
 
     if args.command == "probe":
@@ -55,7 +70,72 @@ def main(argv: list[str] | None = None) -> int:
             _print_model_summary(model)
         return 0
 
+    if args.command == "signal":
+        return _cmd_signal(args)
+    if args.command == "hist":
+        return _cmd_hist(args)
+
     return 1
+
+
+def _cmd_signal(args) -> int:
+    from .loader import MappedFile
+    from .signals import SIGNALS, compute_signals
+
+    with MappedFile.open(args.file) as mf:
+        sig = compute_signals(mf.view, [args.name])[args.name]
+    summary = {
+        "name": sig.name, "unit": sig.unit,
+        "windows": int(len(sig.values)),
+        "min": float(sig.values.min()) if len(sig.values) else None,
+        "mean": float(sig.values.mean()) if len(sig.values) else None,
+        "max": float(sig.values.max()) if len(sig.values) else None,
+        "window": SIGNALS[args.name][0], "stride": SIGNALS[args.name][1],
+    }
+    if args.png:
+        from .render import save_signal_png
+
+        save_signal_png(sig.values, args.png, lo=sig.lo, hi=sig.hi,
+                        title=f"{args.name}  {args.file}")
+        summary["png"] = args.png
+    json.dump(summary, sys.stdout, indent=2)
+    print()
+    return 0
+
+
+def _cmd_hist(args) -> int:
+    from .elements import elements, quantise
+    from .loader import MappedFile
+    from .stats import ngram
+
+    with MappedFile.open(args.file) as mf:
+        vals = elements(mf.view, args.dtype)
+        bins, meta = quantise(vals, args.dtype)
+        del vals
+        result = ngram(bins, args.n)
+        # drop every numpy view of the mmap before close() (ngram results
+        # are fresh arrays; for u8 `bins` is still a view of the file)
+        del bins
+    summary = {"n": args.n, "dtype": args.dtype, "quantise": meta}
+    if args.n == 1:
+        summary["nonzero_bins"] = int((result > 0).sum())
+        summary["top"] = sorted(
+            ((int(c), i) for i, c in enumerate(result)), reverse=True)[:8]
+    elif args.n == 2:
+        summary["nonzero_cells"] = int((result > 0).sum())
+        if args.png:
+            from .render import save_hist2d_png
+
+            save_hist2d_png(result, args.png, mode=args.mode)
+            summary["png"] = args.png
+            summary["display_mode"] = args.mode
+    else:
+        coords, counts = result
+        summary["sparse_points"] = int(len(counts))
+        summary["max_count"] = int(counts.max()) if len(counts) else 0
+    json.dump(summary, sys.stdout, indent=2)
+    print()
+    return 0
 
 
 def _print_model_summary(m) -> None:

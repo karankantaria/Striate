@@ -1,0 +1,141 @@
+{
+  "decision_window": 4096,
+  "display_window": 256,
+  "source": "corpus/calibrate.py over corpus/out",
+  "raw": {
+    "zeros": {
+      "w4096": {
+        "windows": 256,
+        "h_mean": 0.0,
+        "h_std": 0.0,
+        "h_p10": 0.0,
+        "h_p90": 0.0,
+        "chi2_mean": 1044480.0,
+        "chi2_p99": 1044480.0,
+        "printable_mean": 0.0
+      },
+      "w256": {
+        "windows": 4096,
+        "h_mean": 0.0,
+        "h_std": 0.0,
+        "h_p10": 0.0,
+        "h_p90": 0.0,
+        "chi2_mean": 65280.0,
+        "chi2_p99": 65280.0,
+        "printable_mean": 0.0
+      }
+    },
+    "urandom": {
+      "w4096": {
+        "windows": 256,
+        "h_mean": 7.9548,
+        "h_std": 0.004,
+        "h_p10": 7.9498,
+        "h_p90": 7.9595,
+        "chi2_mean": 253.61,
+        "chi2_p99": 303.92,
+        "printable_mean": 0.3911
+      },
+      "w256": {
+        "windows": 4096,
+        "h_mean": 7.1751,
+        "h_std": 0.0524,
+        "h_p10": 7.1072,
+        "h_p90": 7.244,
+        "chi2_mean": 254.68,
+        "chi2_p99": 310.0,
+        "printable_mean": 0.3911
+      }
+    },
+    "ascii": {
+      "w4096": {
+        "windows": 256,
+        "h_mean": 4.4203,
+        "h_std": 0.0166,
+        "h_p10": 4.3998,
+        "h_p90": 4.4421,
+        "chi2_mean": 69523.49,
+        "chi2_p99": 71341.05,
+        "printable_mean": 1.0
+      },
+      "w256": {
+        "windows": 4096,
+        "h_mean": 4.3019,
+        "h_std": 0.0624,
+        "h_p10": 4.2218,
+        "h_p90": 4.3848,
+        "chi2_mean": 4508.81,
+        "chi2_p99": 4988.0,
+        "printable_mean": 1.0
+      }
+    },
+    "hello_static_text": {
+      "w4096": {
+        "windows": 5,
+        "h_mean": 6.2354,
+        "h_std": 0.1488,
+        "h_p10": 6.0583,
+        "h_p90": 6.3834,
+        "chi2_mean": 28579.35,
+        "chi2_p99": 30417.46,
+        "printable_mean": 0.329
+      },
+      "w256": {
+        "windows": 88,
+        "h_mean": 5.509,
+        "h_std": 0.2446,
+        "h_p10": 5.2231,
+        "h_p90": 5.7799,
+        "chi2_mean": 2325.41,
+        "chi2_p99": 4151.98,
+        "printable_mean": 0.3301
+      }
+    },
+    "hello_O2_text": {
+      "w4096": {
+        "windows": 0
+      },
+      "w256": {
+        "windows": 2,
+        "h_mean": 5.7507,
+        "h_std": 0.0395,
+        "h_p10": 5.7191,
+        "h_p90": 5.7823,
+        "chi2_mean": 1934.0,
+        "chi2_p99": 2212.32,
+        "printable_mean": 0.2695
+      }
+    },
+    "upx_payload": {
+      "w4096": {
+        "windows": 74,
+        "h_mean": 7.7969,
+        "h_std": 0.049,
+        "h_p10": 7.7399,
+        "h_p90": 7.8606,
+        "chi2_mean": 1273.47,
+        "chi2_p99": 2195.07,
+        "printable_mean": 0.4328
+      },
+      "w256": {
+        "windows": 1197,
+        "h_mean": 6.9329,
+        "h_std": 0.1592,
+        "h_p10": 6.7677,
+        "h_p90": 7.0787,
+        "chi2_mean": 412.94,
+        "chi2_p99": 1332.8,
+        "printable_mean": 0.4328
+      }
+    }
+  },
+  "derived": {
+    "random_h_min": 7.9348,
+    "random_chi2_max": 455.88,
+    "packed_h_min": 7.0617,
+    "code_h_lo": 5.3083,
+    "code_h_hi": 6.6834,
+    "ascii_printable_min": 0.95,
+    "zero_null_min": 0.995
+  }
+}

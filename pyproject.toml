@@ -33,6 +33,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not perf'"
 markers = [
     "oracle: differential tests requiring radare2 (deselect with '-m \"not oracle\"')",
+    "perf: performance-target tests on 100 MB inputs (run with '-m perf')",
 ]
