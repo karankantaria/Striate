@@ -11,7 +11,7 @@ backend constants so a second backend (radare2 oracle) can share them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator, Protocol
 
 # every mode a backend may be asked for; capstone_be maps them to consts

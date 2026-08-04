@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from binviz.disasm import (Insn, default_backend, linear_sweep, mode_at,
+from binviz.disasm import (default_backend, linear_sweep, mode_at,
                            mode_for_model, recursive_descent)
 from binviz.loader import MappedFile
 from binviz.parse import parse

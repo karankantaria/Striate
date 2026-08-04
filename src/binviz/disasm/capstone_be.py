@@ -39,9 +39,13 @@ _GROUP_NAMES = {
 # interned group sets: millions of Insns must not each own a frozenset
 _GROUP_CACHE: dict[frozenset[str], frozenset[str]] = {}
 
-# non-branch mnemonics whose immediates commonly materialise code pointers
-_PTR_MNEMONICS = {"lea", "mov", "movabs", "adr"}
-# immediates below this are treated as plain constants, not addresses
+# Non-branch mnemonics that materialise a code address. Deliberately only
+# the *address-forming* instructions: RIP-relative `lea` (how startup code
+# hands `main` to libc) and ARM64 `adr`. `mov reg, imm` was tried and
+# removed — ordinary constants land inside .text often enough on a large
+# binary that descent walks into data and manufactures garbage functions.
+_PTR_MNEMONICS = {"lea", "adr"}
+# immediates below this are plain constants, not addresses
 _PTR_MIN = 0x1000
 
 
@@ -87,6 +91,25 @@ class CapstoneBackend:
         for i in cs.disasm(data, va):
             yield self._from_cs(i)
 
+    def cs_handle(self, mode: str) -> capstone.Cs:
+        """The detail-enabled handle for a mode — for `reg_name()` and
+        friends alongside `decode_ops()`."""
+        return self._handle(mode, True)
+
+    def decode_ops(self, va: int, data, mode: str):
+        """Yield raw CsInsn objects — the operand-level escape hatch.
+
+        `Insn` deliberately carries no operand structure: millions of them
+        exist during a sweep. The jump-table matcher needs registers and
+        displacements, and re-decoding its handful of instructions here is
+        both exact and cheaper than parsing `op_str` text. Keeping this on
+        the backend is what stops a second module from opening its own
+        Capstone handles.
+        """
+        if not isinstance(data, (bytes, bytearray)):
+            data = bytes(data)
+        return self._handle(mode, True).disasm(data, va)
+
     def _from_cs(self, i) -> Insn:
         groups = _interned(frozenset(
             _GROUP_NAMES[g] for g in i.groups if g in _GROUP_NAMES))
@@ -94,9 +117,12 @@ class CapstoneBackend:
         ptr_imms: tuple[int, ...] = ()
         is_indirect = False
         if "jump" in groups or "call" in groups:
-            imms = tuple(op.imm for op in i.operands
-                         if op.type == capstone.CS_OP_IMM)
-            targets = imms
+            imms = [op.imm for op in i.operands
+                    if op.type == capstone.CS_OP_IMM]
+            # the *last* immediate, not every one: ARM64 `tbz w0, #31, label`
+            # and `tbnz` put a bit position before the target, and treating
+            # that as an address produces edges to VA 0x1f
+            targets = (imms[-1],) if imms else ()
             is_indirect = not imms
         elif i.mnemonic in _PTR_MNEMONICS:
             ptr_imms = self._pointer_imms(i)
@@ -105,16 +131,16 @@ class CapstoneBackend:
 
     @staticmethod
     def _pointer_imms(i) -> tuple[int, ...]:
-        """Address-sized immediates this insn materialises (RIP-relative lea,
-        mov imm, arm64 adr). Callers filter against executable ranges."""
+        """Code addresses this instruction materialises. Callers still
+        filter against executable ranges before trusting them."""
         out = []
         for op in i.operands:
-            if op.type == capstone.CS_OP_IMM and op.imm >= _PTR_MIN:
-                out.append(op.imm)
-            elif (op.type == capstone.CS_OP_MEM
-                  and i.mnemonic == "lea"
-                  and getattr(op.mem, "base", 0) == x86_const.X86_REG_RIP):
+            if (op.type == capstone.CS_OP_MEM and i.mnemonic == "lea"
+                    and getattr(op.mem, "base", 0) == x86_const.X86_REG_RIP):
                 out.append(i.address + i.size + op.mem.disp)
+            elif (op.type == capstone.CS_OP_IMM and i.mnemonic == "adr"
+                  and op.imm >= _PTR_MIN):
+                out.append(op.imm)
         return tuple(out)
 
 

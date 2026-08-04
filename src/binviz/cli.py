@@ -76,6 +76,25 @@ def main(argv: list[str] | None = None) -> int:
                        help="max instructions to print (0 = all)")
     p_dis.add_argument("--json", action="store_true")
 
+    p_fns = sub.add_parser("functions",
+                           help="recover functions and print the index")
+    p_fns.add_argument("file")
+    p_fns.add_argument("--json", action="store_true")
+    p_fns.add_argument("--arch", help="arch override for raw/headerless input")
+    p_fns.add_argument("--no-heuristics", action="store_true",
+                       help="ground truth only: skip prologue scan + gap sweep")
+    p_fns.add_argument("--sort", default="va", choices=("va", "size", "name"))
+    p_fns.add_argument("--limit", type=int, default=40, help="0 = all")
+
+    p_cfg = sub.add_parser("cfg", help="recover one function's control-flow graph")
+    p_cfg.add_argument("file")
+    p_cfg.add_argument("--func", help="function name")
+    p_cfg.add_argument("--va", type=lambda s: int(s, 0), help="function VA")
+    p_cfg.add_argument("--dot", help="write Graphviz DOT here")
+    p_cfg.add_argument("--json", action="store_true")
+    p_cfg.add_argument("--arch", help="arch override for raw/headerless input")
+    p_cfg.add_argument("--no-heuristics", action="store_true")
+
     p_hist = sub.add_parser("hist", help="n-gram histogram of a file")
     p_hist.add_argument("file")
     p_hist.add_argument("--n", type=int, default=1, choices=(1, 2, 3))
@@ -117,6 +136,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_signal(args)
     if args.command == "disasm":
         return _cmd_disasm(args)
+    if args.command == "functions":
+        return _cmd_functions(args)
+    if args.command == "cfg":
+        return _cmd_cfg(args)
     if args.command == "hist":
         return _cmd_hist(args)
     if args.command == "surface":
@@ -277,6 +300,108 @@ def _cmd_disasm(args) -> int:
         prev_end = i.end_va
     if len(ordered) > limit:
         print(f"  ... {len(ordered) - limit} more (raise --limit)")
+    return 0
+
+
+def _recover_program(args):
+    """Parse + recover, releasing the mmap before returning."""
+    from .disasm import recover
+    from .loader import MappedFile
+    from .parse import parse as parse_binary
+
+    model = parse_binary(args.file, arch=getattr(args, "arch", None))
+    with MappedFile.open(args.file) as mf:
+        program = recover(mf.view, model,
+                          allow_heuristics=not args.no_heuristics)
+    return model, program
+
+
+def _cmd_functions(args) -> int:
+    model, program = _recover_program(args)
+    if args.json:
+        json.dump(program.to_json(), sys.stdout, indent=2)
+        print()
+        return 0
+
+    s = program.stats
+    print(f"{args.file}: {model.format} {model.arch}, "
+          f"{s['functions']} functions, {s['blocks']} blocks, "
+          f"{s['edges']} edges")
+    print(f"coverage: {s['claimed_bytes']}/{s['exec_bytes']} executable "
+          f"bytes ({s['coverage'] * 100:.1f}%), "
+          f"{s['unclaimed_blocks']} unclaimed block(s)")
+    print("discovery: " + "  ".join(
+        f"{k}={v}" for k, v in s["by_discovery"].items() if v))
+    print(f"unresolved control flow: {s['unresolved']} "
+          f"({s['indirect_jumps']} indirect jumps, "
+          f"{s['jump_tables_resolved']} jump table(s) resolved)")
+    for w in program.warnings:
+        print(f"warning: {w}")
+
+    key = {"va": lambda f: f.va, "name": lambda f: f.name,
+           "size": lambda f: -f.size}[args.sort]
+    fns = sorted(program.functions, key=key)
+    limit = args.limit if args.limit > 0 else len(fns)
+    print(f"\n{'va':>12} {'size':>7} {'blk':>5} {'edge':>5} {'?':>3}  "
+          f"{'discovery':<11} name")
+    for f in fns[:limit]:
+        flag = "" if f.complete else " *"
+        print(f"{f.va:>#12x} {f.size:>7} {len(f.graph.blocks):>5} "
+              f"{len(f.graph.edges):>5} {len(f.graph.unresolved):>3}  "
+              f"{f.discovery:<11} {f.name}{flag}")
+    if len(fns) > limit:
+        print(f"... {len(fns) - limit} more (raise --limit)")
+    return 0
+
+
+def _cmd_cfg(args) -> int:
+    if not args.func and args.va is None:
+        print("binviz: cfg needs --func NAME or --va ADDR", file=sys.stderr)
+        return 1
+    model, program = _recover_program(args)
+    fn = (program.by_va(args.va) if args.va is not None
+          else program.by_name(args.func))
+    if fn is None:
+        what = f"{args.va:#x}" if args.va is not None else repr(args.func)
+        print(f"binviz: no recovered function at {what}", file=sys.stderr)
+        if program.packed:
+            print("binviz: this binary appears packed — static CFG recovery "
+                  "is not meaningful here", file=sys.stderr)
+        else:
+            near = sorted(program.functions, key=lambda f: f.va)[:8]
+            print("binviz: known functions include "
+                  + ", ".join(f.name for f in near), file=sys.stderr)
+        return 1
+
+    doc = fn.to_json()
+    if args.dot:
+        from .render import save_cfg_dot
+
+        save_cfg_dot(doc, args.dot)
+    if args.json:
+        json.dump(doc, sys.stdout, indent=2)
+        print()
+        return 0
+
+    f = doc["function"]
+    print(f"{f['name']} @ {f['va']:#x}  size={f['size']}  mode={f['mode']}")
+    print(f"discovery={f['discovery']} confidence={f['confidence']} "
+          f"complete={f['complete']}")
+    print(f"{len(doc['blocks'])} blocks, {len(doc['edges'])} edges, "
+          f"{len(doc['unresolved'])} unresolved, "
+          f"{len(doc['calls_out'])} outgoing call(s)")
+    for b in doc["blocks"]:
+        mark = "" if b["confidence"] == "high" else "  (low confidence)"
+        outs = [f"{e['kind']}->b{e['dst']}" for e in doc["edges"]
+                if e["src"] == b["id"]]
+        print(f"  b{b['id']:<3} {b['va']:#x}..{b['end_va']:#x} "
+              f"{len(b['insns']):>4} insns  [{b['terminator']}]{mark}"
+              + (f"  {' '.join(outs)}" if outs else ""))
+    for u in doc["unresolved"]:
+        hint = f" ({u['hint']})" if u["hint"] else ""
+        print(f"  ? {u['va']:#x}  {u['reason']}{hint}")
+    if args.dot:
+        print(f"\nwrote {args.dot} — render with: dot -Tpng {args.dot} -o cfg.png")
     return 0
 
 

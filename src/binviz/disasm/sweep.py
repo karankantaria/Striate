@@ -92,14 +92,25 @@ class _ExecRanges:
 
 # ------------------------------------------------------------ descent
 
-def _falls_through(insn: Insn, mode: str) -> bool:
+def is_uncond_jump(insn: Insn, mode: str) -> bool:
+    """True for unconditional jumps. Conditional ARM/MIPS branches carry
+    the condition in the mnemonic ("beq", "b.eq"), so this is a set test,
+    not a group test."""
+    return ("jump" in insn.groups
+            and insn.mnemonic in _UNCOND_JUMPS.get(mode, ()))
+
+
+def falls_through(insn: Insn, mode: str) -> bool:
+    """Whether control can reach the next address in sequence. Ignores
+    noreturn calls — the callee name is not known at this level; Phase 5's
+    block splitter layers that on."""
     if insn.is_invalid or "ret" in insn.groups:
         return False
     if insn.mnemonic in _STOP_MNEMONICS:
         return False
-    if "jump" in insn.groups and insn.mnemonic in _UNCOND_JUMPS.get(mode, ()):
-        return False
-    return True
+    return not is_uncond_jump(insn, mode)
+
+
 
 
 def recursive_descent(buf, model, seeds, backend=None, *,
@@ -186,7 +197,7 @@ def recursive_descent(buf, model, seeds, backend=None, *,
                 recorded_any = True
                 on_insn(insn, mode)
                 va = insn.end_va
-                if not _falls_through(insn, mode):
+                if not falls_through(insn, mode):
                     stopped_flow = True
                     break
                 if len(insns) >= max_insns:
