@@ -15,9 +15,19 @@ import numpy as np
 
 from .elements import CLASS_PRINTABLE, CLASS_WHITESPACE, _CLASS_LUT
 
-_TARGET_CHUNK_ELEMS = 1 << 22   # ~4M elements per bincount pass
+# Windowed stats keep a (rows x 256) int64 count matrix per chunk. At 64K
+# elements that is 512 KB for a 256-byte window — L2-resident. Doubling the
+# chunk pushes it out of L2 and costs 2x wall time (measured, with
+# bit-identical output), so this constant is a cache bound, not a guess.
+_WINDOW_CHUNK_ELEMS = 1 << 16
+# The bigram wants the opposite: its table is a fixed 512 KB, so larger
+# chunks amortise the per-call allocation. Measured 1.07 s at 4M vs 1.55 s
+# at 64K on the same 100 MB input.
+_TARGET_CHUNK_ELEMS = 1 << 22
 _TRIGRAM_CHUNK_ELEMS = 1 << 23  # trigram keys are uint32: keep the chunk small
 _TRIGRAM_BLOCK_BITS = 4         # 16 key blocks -> cache-resident count tables
+# distinct keys per chunk above which the sparse path loses to the dense one
+_TRIGRAM_SPARSE_MAX_UNIQUE = 1 << 21
 
 
 def histogram(bins: np.ndarray) -> np.ndarray:
@@ -47,7 +57,7 @@ def _iter_window_counts(
     if len(a) < window:
         return
     n_win = (len(a) - window) // stride + 1
-    rows_per = max(1, _TARGET_CHUNK_ELEMS // window)
+    rows_per = max(1, _WINDOW_CHUNK_ELEMS // window)
     if stride != window:
         view = np.lib.stride_tricks.sliding_window_view(a, window)[::stride]
     for r0 in range(0, n_win, rows_per):
@@ -158,46 +168,102 @@ def ngram(bins: np.ndarray, n: int):
                        out=acc, casting="unsafe")
         return acc.reshape(256, 256).T.copy()
     if n == 3:
-        # A dense bincount over the full 2^24 key space allocates a fresh
-        # 134 MB int64 table per call and thrashes cache. Instead: sort each
-        # chunk's keys (radix sort, ~0.05 s for 8M) and count each of 16 key
-        # blocks into a cache-resident table. Measured on 100 MB binary-like
-        # input: 2.7 s / 169 MB peak, versus 2.1 s / 269 MB dense — the
-        # blocked form is the one that fits the plan's 200 MB budget, and it
-        # is also faster on high-entropy input, where dense degrades worst.
-        acc = np.zeros(1 << 24, dtype=np.uint32)
-        shift = 24 - _TRIGRAM_BLOCK_BITS
-        span = 1 << shift
-        probes = np.arange(1 << _TRIGRAM_BLOCK_BITS, dtype=np.uint32) << shift
-        step = _TRIGRAM_CHUNK_ELEMS
-        for i in range(0, max(len(a) - 2, 0), step):
-            seg = a[i : i + step + 2]
-            # built in place: the natural expression allocates a full-size
-            # temporary per operator (measured 872 MB peak at 100 MB)
-            keys = seg[:-2].astype(np.uint32)
-            keys <<= 8
-            keys |= seg[1:-1]
-            keys <<= 8
-            keys |= seg[2:]
-            keys.sort()
-            bounds = list(np.searchsorted(keys, probes)) + [len(keys)]
-            for b in range(1 << _TRIGRAM_BLOCK_BITS):
-                s0, s1 = bounds[b], bounds[b + 1]
-                if s1 <= s0:
-                    continue
-                base = b << shift
-                lo = (keys[s0:s1] - np.uint32(base)).astype(np.int64)
-                np.add(acc[base : base + span],
-                       np.bincount(lo, minlength=span),
-                       out=acc[base : base + span], casting="unsafe")
-            del keys
-        nz = np.flatnonzero(acc)
-        counts = acc[nz].astype(np.uint32)
-        coords = np.empty((len(nz), 3), dtype=np.uint8)
-        coords[:, 0] = nz >> 16
-        coords[:, 1] = (nz >> 8) & 0xFF
-        coords[:, 2] = nz & 0xFF
-        return coords, counts
+        return _trigram(a)
+    raise ValueError(f"n must be 1, 2 or 3, got {n}")
+
+
+def _trigram_keys(seg: np.ndarray) -> np.ndarray:
+    """24-bit trigram keys, built in place: the natural expression allocates
+    a full-size temporary per operator (measured 872 MB peak at 100 MB)."""
+    keys = seg[:-2].astype(np.uint32)
+    keys <<= 8
+    keys |= seg[1:-1]
+    keys <<= 8
+    keys |= seg[2:]
+    return keys
+
+
+def _trigram(a: np.ndarray):
+    """Sparse trigram counts, by whichever strategy suits the data.
+
+    A dense bincount over the 2^24 key space allocates a fresh 134 MB int64
+    table per call and thrashes cache, so neither path uses one. Instead the
+    first chunk is probed for distinct-key density and that picks the path,
+    because the two regimes invert (measured, 100 MB inputs):
+
+                        binary-like            uniform random
+      sparse merge      2.8 s /  81 MB         20.4 s / 3005 MB
+      blocked dense     3.9 s / 165 MB          8.0 s /  210 MB
+
+    Real binaries are sparse (~143k distinct trigrams, matching the plan's
+    10k-500k estimate) and packed/encrypted regions are dense — and this
+    tool is pointed at both, so committing to either alone is wrong.
+    """
+    step = _TRIGRAM_CHUNK_ELEMS
+    starts = list(range(0, max(len(a) - 2, 0), step))
+    if not starts:
+        return (np.zeros((0, 3), dtype=np.uint8), np.zeros(0, dtype=np.uint32))
+
+    first = _trigram_keys(a[starts[0] : starts[0] + step + 2])
+    first.sort()
+    heads = np.flatnonzero(np.r_[True, first[1:] != first[:-1]])
+    if heads.size <= _TRIGRAM_SPARSE_MAX_UNIQUE:
+        keys, counts = _trigram_sparse(a, starts, step, first, heads)
+    else:
+        del first, heads
+        keys, counts = _trigram_blocked(a, starts, step)
+
+    coords = np.empty((len(keys), 3), dtype=np.uint8)
+    coords[:, 0] = keys >> 16
+    coords[:, 1] = (keys >> 8) & 0xFF
+    coords[:, 2] = keys & 0xFF
+    return coords, counts.astype(np.uint32)
+
+
+def _trigram_sparse(a, starts, step, first, heads):
+    """Per-chunk sorted uniques, merged once at the end. Memory scales with
+    the number of distinct trigrams, not with the 2^24 key space."""
+    uniqs = [first[heads]]
+    cnts = [np.diff(np.r_[heads, len(first)]).astype(np.uint32)]
+    del first, heads
+    for i in starts[1:]:
+        keys = _trigram_keys(a[i : i + step + 2])
+        keys.sort()
+        h = np.flatnonzero(np.r_[True, keys[1:] != keys[:-1]])
+        uniqs.append(keys[h])
+        cnts.append(np.diff(np.r_[h, len(keys)]).astype(np.uint32))
+        del keys
+    all_k = np.concatenate(uniqs)
+    all_c = np.concatenate(cnts)
+    del uniqs, cnts
+    order = np.argsort(all_k, kind="stable")
+    all_k, all_c = all_k[order], all_c[order]
+    h = np.flatnonzero(np.r_[True, all_k[1:] != all_k[:-1]])
+    return all_k[h], np.add.reduceat(all_c.astype(np.uint64), h)
+
+
+def _trigram_blocked(a, starts, step):
+    """Sorted keys counted into cache-resident blocks — bounded memory on
+    high-entropy input, where the sparse path's unique set explodes."""
+    acc = np.zeros(1 << 24, dtype=np.uint32)
+    shift = 24 - _TRIGRAM_BLOCK_BITS
+    span = 1 << shift
+    probes = np.arange(1 << _TRIGRAM_BLOCK_BITS, dtype=np.uint32) << shift
+    for i in starts:
+        keys = _trigram_keys(a[i : i + step + 2])
+        keys.sort()
+        bounds = list(np.searchsorted(keys, probes)) + [len(keys)]
+        for b in range(1 << _TRIGRAM_BLOCK_BITS):
+            s0, s1 = bounds[b], bounds[b + 1]
+            if s1 <= s0:
+                continue
+            base = b << shift
+            lo = (keys[s0:s1] - np.uint32(base)).astype(np.int64)
+            np.add(acc[base : base + span], np.bincount(lo, minlength=span),
+                   out=acc[base : base + span], casting="unsafe")
+        del keys
+    nz = np.flatnonzero(acc)
+    return nz.astype(np.uint32), acc[nz]
     raise ValueError(f"n must be 1, 2 or 3, got {n}")
 
 

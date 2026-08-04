@@ -33,6 +33,30 @@ def main(argv: list[str] | None = None) -> int:
     p_signal.add_argument("--json", action="store_true",
                           help="print summary stats as JSON")
 
+    p_surf = sub.add_parser("surface", help="render a surface to PNG")
+    p_surf.add_argument("file")
+    p_surf.add_argument("--name", default="linear",
+                        help="linear | hilbert | image | ngram2 | ngram3 | dotplot")
+    p_surf.add_argument("--png", help="output PNG path")
+    p_surf.add_argument("--start", type=int, default=0)
+    p_surf.add_argument("--end", type=int, default=-1)
+    p_surf.add_argument("-w", "--width", type=int, default=512)
+    p_surf.add_argument("-H", "--height", type=int, default=512)
+    p_surf.add_argument("--dtype", default="u8")
+    p_surf.add_argument("--scale", type=int, default=1,
+                        help="nearest-neighbour upscale of the PNG")
+    p_surf.add_argument("-p", "--param", action="append", default=[],
+                        metavar="K=V", help="surface parameter (repeatable)")
+
+    p_stride = sub.add_parser("stride",
+                              help="suggest image row strides (autocorrelation)")
+    p_stride.add_argument("file")
+    p_stride.add_argument("--mode", default="grey8",
+                          help="image mode, for pixel-stride conversion")
+    p_stride.add_argument("--start", type=int, default=0)
+    p_stride.add_argument("--end", type=int, default=-1)
+    p_stride.add_argument("--top", type=int, default=3)
+
     p_hist = sub.add_parser("hist", help="n-gram histogram of a file")
     p_hist.add_argument("file")
     p_hist.add_argument("--n", type=int, default=1, choices=(1, 2, 3))
@@ -74,8 +98,83 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_signal(args)
     if args.command == "hist":
         return _cmd_hist(args)
+    if args.command == "surface":
+        return _cmd_surface(args)
+    if args.command == "stride":
+        return _cmd_stride(args)
 
     return 1
+
+
+def _parse_params(pairs: list[str]) -> dict:
+    """K=V strings into typed params (int, float, bool, else str)."""
+    out: dict = {}
+    for item in pairs:
+        key, _, raw = item.partition("=")
+        if not _:
+            raise SystemExit(f"binviz: --param expects K=V, got {item!r}")
+        low = raw.lower()
+        if low in ("true", "false"):
+            out[key] = low == "true"
+            continue
+        try:
+            out[key] = int(raw)
+            continue
+        except ValueError:
+            pass
+        try:
+            out[key] = float(raw)
+        except ValueError:
+            out[key] = raw
+    return out
+
+
+def _jsonable(v):
+    import numpy as np
+
+    if isinstance(v, dict):
+        return {k: _jsonable(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    if isinstance(v, np.generic):
+        return v.item()
+    return v
+
+
+def _cmd_surface(args) -> int:
+    from .loader import MappedFile
+    from .surfaces import SurfaceRequest, get_surface
+
+    params = _parse_params(args.param)
+    surface = get_surface(args.name)
+    with MappedFile.open(args.file) as mf:
+        req = SurfaceRequest(args.start, args.end, args.width, args.height,
+                             args.dtype, params).clamp(mf.size)
+        raster = surface.render(mf.view, req)
+        raster.pixels = raster.pixels.copy()  # release the mmap view
+    summary = {"surface": args.name, "shape": list(raster.pixels.shape),
+               "kind": raster.kind, "meta": _jsonable(raster.meta)}
+    if args.png:
+        from .render import save_raster_png
+
+        save_raster_png(raster, args.png, scale=args.scale)
+        summary["png"] = args.png
+    json.dump(summary, sys.stdout, indent=2)
+    print()
+    return 0
+
+
+def _cmd_stride(args) -> int:
+    from .loader import MappedFile
+    from .surfaces.image import suggest_stride_pixels
+
+    with MappedFile.open(args.file) as mf:
+        cands = suggest_stride_pixels(mf.view, args.mode, start=args.start,
+                                      end=args.end, top=args.top)
+    json.dump({"file": args.file, "mode": args.mode,
+               "candidates": _jsonable(cands)}, sys.stdout, indent=2)
+    print()
+    return 0
 
 
 def _cmd_signal(args) -> int:
