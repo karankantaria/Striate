@@ -6,7 +6,9 @@ address-space model. Static analysis only. See `PLAN.md` for the full design.
 
 ## Status
 
-Phase 0 complete: project skeleton, ground-truth corpus, `binviz probe`.
+Phase 1 complete: project skeleton, ground-truth corpus, `binviz probe`,
+and the address-space model (`binviz model`) — regions, symbols, off↔va
+mapping, gap/overlay materialisation, raw fallback for malformed input.
 
 ## Quickstart
 
