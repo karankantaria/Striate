@@ -460,6 +460,27 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                 return _dotplot_response(app, cache, surf, mf, req)
             return _surface_response(cache, surf, mf, req, name)
 
+    @app.get("/api/{id}/image/stride")
+    def image_stride(id: str, start: int = 0, end: int = -1,
+                     mode: str = "grey8", top: int = 3):
+        """Autocorrelation stride suggester (§5.7): top candidate row
+        strides for the range, in bytes and in pixels for `mode`."""
+        from .surfaces.image import parse_mode, suggest_stride_pixels
+
+        cache = get_cache(id)
+        try:
+            parse_mode(mode)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        top = max(1, min(top, 10))
+        with MappedFile.open(source_path(cache)) as mf:
+            end = mf.size if end < 0 else min(end, mf.size)
+            start = max(0, min(start, end))
+            cands = suggest_stride_pixels(
+                mf.view[start:end], mode, top=top)
+        return {"start": start, "end": end, "mode": mode,
+                "candidates": cands}
+
     # ------------------------------------------------------------- cfg
 
     @app.get("/api/{id}/functions")

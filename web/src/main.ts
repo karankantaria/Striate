@@ -9,9 +9,11 @@ import {
 import type { Theme } from "./colormap.ts";
 import { SelectionStore, fmtRange, type ElementDtype } from "./store.ts";
 import type { DisplayMode } from "./transforms.ts";
-import { HexPeek } from "./views/hex.ts";
+import { DotPlotView } from "./views/dotplot.ts";
+import { HexView } from "./views/hexview.ts";
 import { Hist2DView } from "./views/hist2d.ts";
 import { Hist3DView } from "./views/hist3d.ts";
+import { ImageView } from "./views/image.ts";
 import { InfoPanel } from "./views/info.ts";
 import { OverallView, type OverallLayout, type OverallMode } from "./views/overall.ts";
 import { PlotView } from "./views/plot.ts";
@@ -37,12 +39,21 @@ const overall = new OverallView(
   $("overall-canvas"), store, theme, "file", $("overall-legend"));
 const zoomed = new OverallView($("zoom-canvas"), store, theme, "selection");
 const plot = new PlotView($("plot-canvas"), store, theme, $("plot-signals"));
-const hex = new HexPeek($("hex-dump"), $("hex-addr"), store);
+const hex = new HexView($("hex-scroll"), $("hex-addr"), store);
 const info = new InfoPanel($("model-info"), store);
 const hist2d = new Hist2DView(
   $("hist2d-canvas"), store, theme, $("hist2d-status"));
 const hist3d = new Hist3DView($("hist3d-canvas"), store, theme);
 hist3d.onStats = (text) => { $("hist3d-status").textContent = text; };
+const image = new ImageView($("image-canvas"), {
+  mode: $("img-mode"), width: $("img-width"), offset: $("img-offset"),
+  invert: $("img-invert"), suggest: $("img-suggest"),
+  fitSel: $("img-fitsel"), status: $("img-status"),
+}, store);
+const dotplot = new DotPlotView($("dotplot-canvas"), {
+  ax1: $("dot-ax1"), ax2: $("dot-ax2"), window: $("dot-window"),
+  samples: $("dot-samples"), run: $("dot-run"), status: $("dot-status"),
+}, store, theme);
 
 let currentId = "";
 let pollTimer: number | undefined;
@@ -121,6 +132,8 @@ async function onModelReady(st: Status): Promise<void> {
   info.setBinary(model);
   hist2d.setBinary(currentId, model);
   hist3d.setBinary(currentId, model);
+  image.setBinary(currentId, model);
+  dotplot.setBinary(currentId, model);
 }
 
 async function onSignalsReady(): Promise<void> {

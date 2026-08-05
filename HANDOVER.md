@@ -4,7 +4,7 @@
 > the "how to run" section if it changed, and the gotchas list. `PLAN.md` is
 > the full design doc; this file is the fast on-ramp for a new session.
 
-## Status (updated 2026-08-05, end of Phase 8)
+## Status (updated 2026-08-05, end of Phase 9)
 
 | Phase | What | State |
 |---|---|---|
@@ -16,9 +16,9 @@
 | P5 | Function discovery + CFG JSON (5-tier cascade, jump tables, measured stripped recall) | ✅ done |
 | P6 | Content-addressed cache + FastAPI service (binary wire formats, X-Meta header) | ✅ done |
 | P7 | Web shell: Overall + Zoomed + Plot + SelectionStore + hex peek | ✅ done |
-| **P8** | **2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate)** | ✅ **done (this session)** |
-| P9 | Image view, dot plot, full hex viewer | ⬜ next (parallel with P10) |
-| P10 | CFG view (elkjs in a worker, Canvas2D) | ⬜ (parallel with P9) |
+| P8 | 2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate) | ✅ done |
+| **P9** | **Image view (stride suggester, 87 modes), dot plot (progressive), virtualised hex viewer** | ✅ **done (this session)** |
+| P10 | CFG view (elkjs in a worker, Canvas2D) | ⬜ next |
 | P11 | Triage verdict + file navigation | ⬜ needs all views |
 
 ## How to run
@@ -42,8 +42,8 @@ Open http://localhost:5173 and paste an absolute path (e.g.
 
 Tests:
 ```bash
-.venv/Scripts/python -m pytest -q         # backend, 279 passing (perf marked-out)
-cd web && npm test                        # 19 node --test units (hilbert/off↔va/colormap/transforms)
+.venv/Scripts/python -m pytest -q         # backend, 287 passing (perf marked-out)
+cd web && npm test                        # 26 node --test units (hilbert/off↔va/colormap/transforms/hexutil)
 cd web && npm run build                   # tsc --noEmit (strict) + vite build
 ```
 
@@ -80,7 +80,7 @@ the views linked rather than adjacent.
   server's min/mean/max bands as envelope + 2px mean line; crosshair +
   tooltip; drag-select; "follow selection" x-range toggle. Aggregation is
   server-side at `n = canvas width` — never fetch-all-and-downsample.
-- `src/views/hex.ts` — 512 B hex peek at caret/selection (full viewer is P9).
+- `src/views/hex.ts` — 512 B hex peek (deleted in P9; see `views/hexview.ts`).
 - `src/views/info.ts` — model summary, warnings, clickable region list
   (region click drives the SelectionStore).
 - `src/main.ts` — open (path / upload / `?path=`), status polling with
@@ -141,6 +141,49 @@ u16le collapsing to the diagonal (and the trigram to a 3-D diagonal line),
 urandom filling the cube vs ascii.txt corner cluster. Plates for the
 dtype criterion: `docs/plates/ngram2_ramp16_{u8,u16le}.png`.
 
+## What Phase 9 built
+
+Backend (`src/binviz/service.py`, tested in `tests/test_phase9.py`):
+- `GET /api/{id}/image/stride?start&end&mode&top` — exposes the P3
+  autocorrelation stride suggester (`surfaces/image.py:suggest_stride_pixels`),
+  candidates in bytes *and* pixels for the given mode. rgb_raw top candidate
+  is 320 px; bayer's true 640 px stride only surfaces as a peak sub-multiple
+  (the CFA repeats every two rows) — the engine handles that, don't "fix" it.
+- test_phase9.py also pins the PNG path of /surface/image and the dotplot
+  progressive contract (advancing cursor → monotone resolved/progress/hits).
+
+Frontend:
+- `src/api.ts` — `getSurfaceRgb` (PNG → ImageBitmap + X-Meta) and
+  `getStrideSuggestions`.
+- `src/views/image.ts` — all 15 packed + 72 Bayer modes (optgroups,
+  generated); width/offset/invert controls; suggester top-3 as one-click
+  buttons (pixel units per mode, inexact ones greyed); `sel→w` helper;
+  follows the selection until the user types an offset (any new selection
+  re-anchors); hover tooltip maps pixel → offset/VA/region, click sets the
+  caret. PNG drawn pixelated at integer upscales.
+- `src/views/dotplot.ts` — axis pickers (selection/file per axis), window k,
+  samples-per-pass, refine toggle. Sampled mode drives the server's
+  progressive accumulator with an advancing `cursor` until progress hits 1
+  (REFINE_DELAY_MS between passes, MAX_PASSES cap); the exact/sampled mode +
+  progress + hits label is persistent. RasterCanvas fit:"square", viridis.
+- `src/views/hexview.ts` + `hexutil.ts` — virtualised hex viewer replacing
+  the P7 peek (`views/hex.ts` deleted). Only visible rows render; bytes come
+  through a 64×16 KiB LRU page cache (measured: end+middle jumps on
+  hello_static fetched 48 KiB). Annotation gutter shows region + symbol at
+  each row (labels printed on change), selection highlights and scrolls into
+  view, click sets caret. hexutil.ts is DOM-free (scroll map, page span,
+  symbol bisect) and node --test covered. The scroll map compresses the
+  spacer under Chrome's ~33.5M px element-height cap (MAX_SPACER_PX) and
+  scales scrollTop back to rows — 1 GiB files scroll fine.
+- Layout is now a 4-row grid (hex spans rows 2–4); `#layout` scrolls
+  vertically on smaller screens.
+
+Verified live: rgb_raw colour bars at stride 320 (suggested) vs shear at a
+wrong stride; bayer_raw smooth at RGGB_12 + 640 px vs channel-swapped at
+GRBG; repeats.bin dot plot showing the diagonal + 3 off-diagonal band pairs
+refining to 100%; drag-select in Overall scrolling/highlighting the hex view
+and re-anchoring the image view; no console errors.
+
 ## Gotchas discovered this session (read before touching P9–P10)
 
 1. **Never let the browser HTTP-cache `/api`.** 404 and 410 are
@@ -183,13 +226,27 @@ dtype criterion: `docs/plates/ngram2_ramp16_{u8,u16le}.png`.
    **wraps mod 65536** — as u16le its bigram is the diagonal *plus* a few
    (255, 0) wrap cells. Tests that assert pure diagonality build their own
    non-wrapping ramp (see `tests/test_phase8.py`).
+10. **Hex bytes render as `··` placeholders until their page fetch lands**,
+    then a queued rAF repaint fills them in — a screenshot taken in that
+    window looks broken but isn't. If placeholders *persist*, then look at
+    the page cache (`hexview.ts:fetchPage`), not the renderer.
+11. A dot plot that is one solid colour is not automatically a bug:
+    rgb_raw.bin repeats every row 240×, so at k=8 essentially every cell
+    has a match and log1p-normalised display saturates. Check
+    `meta.lit_cells` against the raster size before diagnosing.
+12. `ImageBitmap`s must be `.close()`d when replaced (image view does);
+    leaking them holds GPU memory across refetches.
 
-## Where P9/P10 plug in
+## Where P10 plugs in
 
-P7/P8 built the pieces they import: `SelectionStore` (incl. the shared
-`dtype` the image view should follow), `api.ts`, `colormap.ts`,
-`canvas/raster.ts`, `transforms.ts`, the tooltip singleton, and the pane
-grid in `index.html`/`theme.css`. Backend endpoints they need already
-exist and are tested: `/surface/image|dotplot` (dotplot keeps a
-progressive accumulator server-side, `meta.progress`), `/functions`,
-`/cfg/{va}`, `/bytes`.
+Everything it imports exists: `SelectionStore` (clicking a CFG block should
+`setSelection` to the block's file range — overall, hex, and bigram already
+follow), `api.ts`, `colormap.ts`, the tooltip singleton, and the pane grid
+in `index.html`/`theme.css` (add a `cfg` grid area). Backend `/functions`
+and `/cfg/{va}` are tested and ready. elkjs is **not** yet a dependency —
+`npm install elkjs` and put layout in a Web Worker
+(`src/workers/layout.worker.ts` per the PLAN), cached by
+`(function_va, collapse_state)`. Note P9's image view intentionally does
+NOT follow the shared `SelectionStore.dtype` — pixel formats (rgb8, bayer…)
+are a different axis than element dtypes; the mode picker is its own
+control.

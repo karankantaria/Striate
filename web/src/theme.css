@@ -99,12 +99,16 @@ select {
   min-height: 0;
   gap: 8px;
   padding: 8px;
+  overflow-y: auto;    /* 4 rows of panes; smaller screens scroll */
   grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr) minmax(240px, 0.9fr);
-  grid-template-rows: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-rows:
+    minmax(240px, 1.1fr) minmax(200px, 0.9fr)
+    minmax(240px, 1.1fr) minmax(240px, 1.1fr);
   grid-template-areas:
     "overall zoom side"
     "overall plot hex"
-    "hist2d hist3d hex";
+    "hist2d hist3d hex"
+    "image dotplot hex";
 }
 #overall-pane { grid-area: overall; }
 #zoom-pane { grid-area: zoom; }
@@ -113,6 +117,8 @@ select {
 #hex-pane { grid-area: hex; }
 #hist2d-pane { grid-area: hist2d; }
 #hist3d-pane { grid-area: hist3d; }
+#image-pane { grid-area: image; }
+#dotplot-pane { grid-area: dotplot; }
 
 .pane-head input[type="number"] {
   width: 52px;
@@ -185,14 +191,37 @@ select {
 .region-row .rperms { color: var(--muted); width: 30px; }
 .region-row .rsize { color: var(--ink-2); }
 
-#hex-dump {
-  margin: 0; padding: 8px 10px;
-  font: 12px/1.5 ui-monospace, Consolas, monospace;
+/* virtualised hex viewer (Phase 9) */
+.hexscroll { position: relative; }
+.hex-spacer { width: 1px; }
+.hex-content {
+  position: absolute; left: 0; right: 0;
+  padding: 0 10px;
+  font: 12px ui-monospace, Consolas, monospace;
   color: var(--ink-2);
 }
-#hex-dump .hl { background: var(--select-fill); color: var(--ink); }
-#hex-dump .addr { color: var(--muted); }
-#hex-dump .ascii { color: var(--ink); }
+.hexrow { height: 18px; line-height: 18px; white-space: pre; }
+.hexrow .hl { background: var(--select-fill); color: var(--ink); }
+.hexrow .caret { outline: 1px solid var(--select-edge); }
+.hexrow .addr { color: var(--muted); }
+.hexrow .ascii { color: var(--ink); }
+.hexrow .gr, .hexrow .gs {
+  display: inline-block; overflow: hidden; vertical-align: bottom;
+  color: var(--muted); font-size: 10px;
+}
+.hexrow .gr { width: 8ch; color: var(--accent); }
+.hexrow .gs { width: 14ch; margin-right: 1ch; }
+
+/* image view stride suggester */
+.suggest { display: inline-flex; gap: 4px; }
+.suggest button { padding: 1px 6px; font-size: 11px; }
+.suggest button.inexact { opacity: 0.55; }
+.offset-input {
+  width: 76px; padding: 1px 4px;
+  border: 1px solid var(--baseline); border-radius: 4px;
+  background: var(--surface-1); color: var(--ink);
+  font: 11px ui-monospace, Consolas, monospace;
+}
 
 #empty-state {
   flex: 1; display: flex; align-items: center; justify-content: center;

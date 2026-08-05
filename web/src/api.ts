@@ -155,6 +155,41 @@ export async function getSurface(
   return { pixels, w, h, meta };
 }
 
+/** RGB surfaces (image view) ship as PNG; decode to an ImageBitmap. */
+export async function getSurfaceRgb(
+  id: string, name: string,
+  opts: { start?: number; end?: number; w?: number; h?: number; dtype?: string;
+          [param: string]: string | number | boolean | undefined },
+): Promise<{ bitmap: ImageBitmap; meta: SurfaceMeta }> {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(opts)) {
+    if (v !== undefined) q.set(k, String(v));
+  }
+  const r = await ok(await get(`/api/${id}/surface/${name}?${q}`));
+  const meta = xmeta<SurfaceMeta>(r);
+  if (meta.kind !== "rgb") {
+    throw new Error(`surface ${name} returned ${meta.kind}; expected rgb`);
+  }
+  const bitmap = await createImageBitmap(await r.blob());
+  return { bitmap, meta };
+}
+
+export interface StrideCandidate {
+  bytes: number; pixels: number; exact: boolean;
+  score: number; origin: string;
+}
+
+/** Autocorrelation stride suggester for the image view (§5.7). */
+export async function getStrideSuggestions(
+  id: string, mode: string, start = 0, end = -1, top = 3,
+): Promise<StrideCandidate[]> {
+  const r = await ok(await get(
+    `/api/${id}/image/stride?mode=${encodeURIComponent(mode)}` +
+    `&start=${start}&end=${end}&top=${top}`));
+  const doc = await r.json();
+  return doc.candidates as StrideCandidate[];
+}
+
 export interface QuantiseMeta {
   dtype: string; n: number; lo: number; hi: number; method: string;
   n_nonfinite?: number;

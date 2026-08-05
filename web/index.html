@@ -65,7 +65,7 @@
             <h2>Hex</h2>
             <span id="hex-addr" class="range-label muted"></span>
           </div>
-          <pre id="hex-dump" class="scroll"></pre>
+          <div id="hex-scroll" class="scroll hexscroll"></div>
         </section>
 
         <section id="hist2d-pane" class="pane">
@@ -112,6 +112,49 @@
             <span id="hist3d-status" class="range-label muted"></span>
           </div>
           <div id="hist3d-canvas" class="canvas-host"></div>
+        </section>
+
+        <section id="image-pane" class="pane">
+          <div class="pane-head">
+            <h2>Image</h2>
+            <select id="img-mode" title="pixel format"></select>
+            <label class="toggle" title="row stride in pixels">w
+              <input type="number" id="img-width" min="1" step="1" value="256" />
+            </label>
+            <span id="img-suggest" class="suggest"
+                  title="suggested row strides (autocorrelation)"></span>
+            <label class="toggle" title="start offset (hex ok)">@
+              <input type="text" id="img-offset" value="0x0" class="offset-input" />
+            </label>
+            <button id="img-fitsel" title="set width from selection length">sel→w</button>
+            <label class="toggle"><input type="checkbox" id="img-invert" />invert</label>
+            <span id="img-status" class="range-label muted"></span>
+          </div>
+          <div id="image-canvas" class="canvas-host"></div>
+        </section>
+
+        <section id="dotplot-pane" class="pane">
+          <div class="pane-head">
+            <h2>Dot plot</h2>
+            <select id="dot-ax1" title="x-axis range">
+              <option value="selection">x: selection</option>
+              <option value="file">x: file</option>
+            </select>
+            <select id="dot-ax2" title="y-axis range">
+              <option value="selection">y: selection</option>
+              <option value="file">y: file</option>
+            </select>
+            <label class="toggle" title="match window (bytes)">k
+              <input type="number" id="dot-window" min="1" max="64" step="1" value="8" />
+            </label>
+            <label class="toggle" title="positions sampled per pass">n
+              <input type="number" id="dot-samples" min="1000" step="100000" value="500000" />
+            </label>
+            <label class="toggle" title="keep sampling until every position is resolved">
+              <input type="checkbox" id="dot-run" checked />refine</label>
+            <span id="dot-status" class="range-label muted"></span>
+          </div>
+          <div id="dotplot-canvas" class="canvas-host"></div>
         </section>
       </main>
 
