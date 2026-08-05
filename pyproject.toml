@@ -20,6 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest==9.1.1",
+    # FastAPI's TestClient transport (tests/test_service.py)
+    "httpx==0.28.1",
     # independent x86 decoder used as the differential-test oracle where
     # binutils (objdump) is unavailable, e.g. plain Windows hosts
     "iced-x86==1.21.0",

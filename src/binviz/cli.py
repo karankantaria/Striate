@@ -95,6 +95,14 @@ def main(argv: list[str] | None = None) -> int:
     p_cfg.add_argument("--arch", help="arch override for raw/headerless input")
     p_cfg.add_argument("--no-heuristics", action="store_true")
 
+    p_serve = sub.add_parser("serve", help="run the HTTP service")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--cache", help="cache root (default ~/.cache/binviz "
+                         "or $BINVIZ_CACHE)")
+    p_serve.add_argument("--open", dest="open_path", metavar="FILE",
+                         help="analyse FILE in the background on startup")
+
     p_hist = sub.add_parser("hist", help="n-gram histogram of a file")
     p_hist.add_argument("file")
     p_hist.add_argument("--n", type=int, default=1, choices=(1, 2, 3))
@@ -146,8 +154,34 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_surface(args)
     if args.command == "stride":
         return _cmd_stride(args)
+    if args.command == "serve":
+        return _cmd_serve(args)
 
     return 1
+
+
+def _cmd_serve(args) -> int:
+    import os
+
+    import uvicorn
+
+    from .service import create_app
+
+    app = create_app(args.cache)
+    if args.open_path:
+        from .loader import sha256_file
+
+        if not os.path.isfile(args.open_path):
+            print(f"binviz: no such file: {args.open_path}", file=sys.stderr)
+            return 1
+        sha = sha256_file(args.open_path)
+        root = args.cache
+        state = app.state.jobs.ensure(
+            sha, os.path.abspath(args.open_path),
+            root, stored=False)
+        print(f"open {args.open_path}: id={sha} state={state}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    return 0
 
 
 def _parse_params(pairs: list[str]) -> dict:
