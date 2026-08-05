@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -165,6 +166,16 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
         allow_headers=["*"], expose_headers=["X-Meta"])
+
+    @app.middleware("http")
+    async def no_store(request: Request, call_next):
+        # Analysis state changes under the same URL, and several error
+        # statuses (404, 410) are heuristically cacheable — a browser that
+        # caches a mid-analysis error would never recover. Nothing here
+        # may be cached by HTTP semantics.
+        resp = await call_next(request)
+        resp.headers.setdefault("Cache-Control", "no-store")
+        return resp
     app.state.cache_root = cache_root
     app.state.jobs = _Jobs()
     app.state.dotplots = _DotPlots()
@@ -190,7 +201,14 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                      f"poll /api/{cache.sha256}/status")
 
     def source_path(cache: BinaryCache) -> str:
-        meta = cache.meta() or {}
+        # meta.json is rewritten throughout analysis; on Windows a read can
+        # catch it mid-replace and come back None. Retry before giving up.
+        meta = {}
+        for _ in range(3):
+            meta = cache.meta() or {}
+            if meta.get("source"):
+                break
+            time.sleep(0.03)
         src = meta.get("source", {})
         path = (str(cache.path("file.bin")) if src.get("stored")
                 else src.get("path"))

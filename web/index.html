@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>binviz</title>
+    <link rel="stylesheet" href="/src/theme.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <span class="brand">binviz</span>
+        <input id="path-input" type="text" spellcheck="false"
+               placeholder="absolute path to a binary… (or drop a file anywhere)" />
+        <button id="open-btn">Open</button>
+        <span id="status-chip" class="chip" hidden></span>
+        <span class="spacer"></span>
+        <span id="file-label" class="file-label"></span>
+        <button id="theme-btn" title="toggle light/dark">◐</button>
+      </header>
+
+      <main id="layout" hidden>
+        <section id="overall-pane" class="pane">
+          <div class="pane-head">
+            <h2>Overall</h2>
+            <select id="overall-layout">
+              <option value="linear">Linear</option>
+              <option value="hilbert">Hilbert</option>
+            </select>
+            <select id="overall-mode">
+              <option value="byteclass">Byte class</option>
+              <option value="signal">Entropy</option>
+              <option value="value">Byte value</option>
+            </select>
+            <span id="overall-legend" class="legend"></span>
+          </div>
+          <div id="overall-canvas" class="canvas-host"></div>
+        </section>
+
+        <section id="zoom-pane" class="pane">
+          <div class="pane-head">
+            <h2>Zoomed</h2>
+            <span id="zoom-range" class="range-label muted">no selection</span>
+            <button id="zoom-clear" title="clear selection">✕</button>
+          </div>
+          <div id="zoom-canvas" class="canvas-host"></div>
+        </section>
+
+        <section id="plot-pane" class="pane">
+          <div class="pane-head">
+            <h2>Signals</h2>
+            <span id="plot-signals" class="signal-picks"></span>
+            <label class="toggle"><input type="checkbox" id="plot-follow" />follow selection</label>
+          </div>
+          <div id="plot-canvas" class="canvas-host"></div>
+        </section>
+
+        <aside id="side-pane" class="pane">
+          <div class="pane-head"><h2 id="info-title">Binary</h2></div>
+          <div id="model-info" class="scroll"></div>
+        </aside>
+
+        <section id="hex-pane" class="pane">
+          <div class="pane-head">
+            <h2>Hex</h2>
+            <span id="hex-addr" class="range-label muted"></span>
+          </div>
+          <pre id="hex-dump" class="scroll"></pre>
+        </section>
+      </main>
+
+      <div id="empty-state">
+        <p>Open a binary to begin — paste an absolute path above, or drop a file onto the window.</p>
+      </div>
+      <div id="tooltip" hidden></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

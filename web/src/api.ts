@@ -1,0 +1,164 @@
+/* Typed fetch layer over the binviz HTTP service (Phase 6 wire format).
+   Bulk numeric payloads are raw little-endian typed arrays; metadata rides
+   in the X-Meta response header as JSON. */
+
+export interface Region {
+  name: string;
+  kind: "section" | "segment" | "header" | "overlay" | "gap";
+  file_off: number;   // -1 when not file-backed (.bss)
+  file_size: number;
+  vaddr: number;      // -1 when not mapped
+  vsize: number;
+  perms: string;
+  entropy: number | null;
+}
+
+export interface Symbol_ {
+  name: string; va: number; size: number; kind: string; source: string;
+}
+
+export interface BinaryModel {
+  path: string; sha256: string; size: number;
+  format: string; arch: string; bits: number; endian: string;
+  entry_va: number | null;
+  regions: Region[];
+  symbols: Symbol_[];
+  imports: string[];
+  exports: string[];
+  arch_ranges: [number, number, string][];
+  warnings: string[];
+  mappings: [number, number, number][]; // [file_off, size, vaddr]
+}
+
+export interface Status {
+  sha256: string; size: number;
+  state: "running" | "complete" | "error" | null;
+  error: string | null;
+  artifacts: Record<string, string> | null; // model|signals|hist|trigram|functions
+  tool_version: string | null;
+  source: { path: string; stored: boolean } | null;
+}
+
+export interface SignalInfo {
+  name: string; unit: string; window: number; stride: number;
+  lo: number; hi: number; ready: boolean; windows: number | null;
+}
+
+export interface SignalBand {
+  min: Float32Array; mean: Float32Array; max: Float32Array;
+  meta: {
+    name: string; unit: string; n: number; window: number; stride: number;
+    lo: number; hi: number; start: number; end: number; windows: number;
+  };
+}
+
+export interface SurfaceMeta {
+  kind: "scalar" | "rgb";
+  shape: number[];          // [h, w] for scalar
+  surface: string;
+  meta: Record<string, unknown> & { warnings?: string[] };
+}
+
+export interface ScalarRaster {
+  pixels: Uint8Array; w: number; h: number; meta: SurfaceMeta;
+}
+
+/** All API GETs bypass the browser HTTP cache: analysis state changes
+    under the same URL, and a cached mid-analysis error (404/410 are
+    heuristically cacheable) would wedge the view forever. */
+function get(url: string): Promise<Response> {
+  return fetch(url, { cache: "no-store" });
+}
+
+async function ok(r: Response): Promise<Response> {
+  if (!r.ok) {
+    let detail = r.statusText;
+    try {
+      const doc = await r.json();
+      if (doc && typeof doc.detail === "string") detail = doc.detail;
+    } catch { /* body wasn't JSON */ }
+    const err = new Error(detail) as Error & { status: number };
+    err.status = r.status;
+    throw err;
+  }
+  return r;
+}
+
+function xmeta<T>(r: Response): T {
+  return JSON.parse(r.headers.get("X-Meta") ?? "{}") as T;
+}
+
+export async function openPath(path: string): Promise<{ id: string; state: string }> {
+  const r = await ok(await fetch("/api/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  }));
+  return r.json();
+}
+
+export async function openUpload(data: ArrayBuffer): Promise<{ id: string; state: string }> {
+  const r = await ok(await fetch("/api/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: data,
+  }));
+  return r.json();
+}
+
+export async function getStatus(id: string): Promise<Status> {
+  return (await ok(await get(`/api/${id}/status`))).json();
+}
+
+export async function getModel(id: string): Promise<BinaryModel> {
+  return (await ok(await get(`/api/${id}/model`))).json();
+}
+
+export async function getSignals(id: string): Promise<SignalInfo[]> {
+  const doc = await (await ok(await get(`/api/${id}/signals`))).json();
+  return doc.signals;
+}
+
+export async function getSignal(
+  id: string, name: string, n: number, start = 0, end = -1,
+): Promise<SignalBand> {
+  const r = await ok(await get(
+    `/api/${id}/signal/${name}?n=${n}&start=${start}&end=${end}`));
+  const meta = xmeta<SignalBand["meta"]>(r);
+  const buf = await r.arrayBuffer();
+  const all = new Float32Array(buf);
+  const nn = meta.n;
+  return {
+    min: all.subarray(0, nn),
+    mean: all.subarray(nn, 2 * nn),
+    max: all.subarray(2 * nn, 3 * nn),
+    meta,
+  };
+}
+
+export async function getSurface(
+  id: string, name: string,
+  opts: { start?: number; end?: number; w?: number; h?: number; dtype?: string;
+          [param: string]: string | number | boolean | undefined },
+): Promise<ScalarRaster> {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(opts)) {
+    if (v !== undefined) q.set(k, String(v));
+  }
+  const r = await ok(await get(`/api/${id}/surface/${name}?${q}`));
+  const meta = xmeta<SurfaceMeta>(r);
+  if (meta.kind !== "scalar") {
+    throw new Error(`surface ${name} returned ${meta.kind}; expected scalar`);
+  }
+  const pixels = new Uint8Array(await r.arrayBuffer());
+  const [h, w] = meta.shape;
+  return { pixels, w, h, meta };
+}
+
+export async function getBytes(
+  id: string, off: number, len: number,
+): Promise<{ data: Uint8Array; off: number }> {
+  const r = await ok(await get(`/api/${id}/bytes?off=${off}&len=${len}`));
+  const meta = xmeta<{ off: number }>(r);
+  return { data: new Uint8Array(await r.arrayBuffer()), off: meta.off };
+}
