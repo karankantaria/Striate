@@ -155,6 +155,68 @@ export async function getSurface(
   return { pixels, w, h, meta };
 }
 
+export interface QuantiseMeta {
+  dtype: string; n: number; lo: number; hi: number; method: string;
+  n_nonfinite?: number;
+}
+
+export interface Hist2Meta {
+  n: number; dtype: string; start: number; end: number;
+  quantise: QuantiseMeta | { method: string };
+}
+
+/** 256×256 bigram counts, flat C-order [first*256 + second]. */
+export async function getHist2(
+  id: string, dtype = "u8", start = 0, end = -1,
+): Promise<{ counts: Uint32Array; meta: Hist2Meta }> {
+  const r = await ok(await get(
+    `/api/${id}/hist?n=2&dtype=${dtype}&start=${start}&end=${end}`));
+  const meta = xmeta<Hist2Meta>(r);
+  return { counts: new Uint32Array(await r.arrayBuffer()), meta };
+}
+
+export interface Hist3Meta {
+  points: number; total_points: number; threshold: number; dtype: string;
+  capped: boolean; layout: string; start?: number; end?: number;
+}
+
+/** Sparse trigram points, interleaved [x,y,z,count] i32. With `limit`,
+    the server keeps the densest points (whole-file u8 responses are
+    count-descending; capped computed responses are sorted to match). */
+export async function getHist3(
+  id: string, threshold = 1, dtype = "u8", start = 0, end = -1, limit = 0,
+): Promise<{ pts: Int32Array; meta: Hist3Meta }> {
+  const r = await ok(await get(
+    `/api/${id}/hist3?threshold=${threshold}&dtype=${dtype}` +
+    `&start=${start}&end=${end}&limit=${limit}`));
+  const meta = xmeta<Hist3Meta>(r);
+  return { pts: new Int32Array(await r.arrayBuffer()), meta };
+}
+
+export interface LocateRect {
+  first0: number; first1: number; second0: number; second1: number;
+}
+
+export interface LocateMeta {
+  n: number; dtype: string; start: number; end: number;
+  rect: LocateRect; matches: number; pairs: number;
+}
+
+/** Brush-to-locate: bigram cell rect -> binned occurrence density. */
+export async function postLocate(
+  id: string, rect: LocateRect,
+  opts: { dtype?: string; start?: number; end?: number; n?: number } = {},
+): Promise<{ density: Uint32Array; meta: LocateMeta }> {
+  const r = await ok(await fetch(`/api/${id}/hist/locate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...rect, ...opts }),
+    cache: "no-store",
+  }));
+  const meta = xmeta<LocateMeta>(r);
+  return { density: new Uint32Array(await r.arrayBuffer()), meta };
+}
+
 export async function getBytes(
   id: string, off: number, len: number,
 ): Promise<{ data: Uint8Array; off: number }> {

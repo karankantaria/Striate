@@ -7,8 +7,11 @@ import {
   type BinaryModel, type Status,
 } from "./api.ts";
 import type { Theme } from "./colormap.ts";
-import { SelectionStore, fmtRange } from "./store.ts";
+import { SelectionStore, fmtRange, type ElementDtype } from "./store.ts";
+import type { DisplayMode } from "./transforms.ts";
 import { HexPeek } from "./views/hex.ts";
+import { Hist2DView } from "./views/hist2d.ts";
+import { Hist3DView } from "./views/hist3d.ts";
 import { InfoPanel } from "./views/info.ts";
 import { OverallView, type OverallLayout, type OverallMode } from "./views/overall.ts";
 import { PlotView } from "./views/plot.ts";
@@ -36,6 +39,10 @@ const zoomed = new OverallView($("zoom-canvas"), store, theme, "selection");
 const plot = new PlotView($("plot-canvas"), store, theme, $("plot-signals"));
 const hex = new HexPeek($("hex-dump"), $("hex-addr"), store);
 const info = new InfoPanel($("model-info"), store);
+const hist2d = new Hist2DView(
+  $("hist2d-canvas"), store, theme, $("hist2d-status"));
+const hist3d = new Hist3DView($("hist3d-canvas"), store, theme);
+hist3d.onStats = (text) => { $("hist3d-status").textContent = text; };
 
 let currentId = "";
 let pollTimer: number | undefined;
@@ -52,7 +59,8 @@ async function openBinary(kind: "path" | "upload", arg: string | ArrayBuffer) {
       : await openUpload(arg as ArrayBuffer);
     currentId = id;
     modelLoaded = signalsLoaded = false;
-    store.setModel(null);
+    store.setModel(null);   // resets dtype to u8 — keep the picker in sync
+    ($("dtype-select") as HTMLSelectElement).value = "u8";
     poll();
   } catch (e) {
     setStatus(String((e as Error).message ?? e), true);
@@ -111,6 +119,8 @@ async function onModelReady(st: Status): Promise<void> {
   zoomed.setBinary(currentId, model);
   hex.setBinary(currentId, model);
   info.setBinary(model);
+  hist2d.setBinary(currentId, model);
+  hist3d.setBinary(currentId, model);
 }
 
 async function onSignalsReady(): Promise<void> {
@@ -170,6 +180,28 @@ $("zoom-clear").addEventListener("click", () => store.setSelection(null));
 
 $("plot-follow").addEventListener("change", () => {
   plot.setFollow(($("plot-follow") as HTMLInputElement).checked);
+});
+
+$("hist2d-display").addEventListener("change", () => {
+  hist2d.setDisplay(($("hist2d-display") as HTMLSelectElement).value as DisplayMode);
+});
+$("dtype-select").addEventListener("change", () => {
+  store.setDtype(($("dtype-select") as HTMLSelectElement).value as ElementDtype);
+});
+$("locate-clear").addEventListener("click", () => hist2d.clearBrush());
+
+$("hist3d-threshold").addEventListener("change", () => {
+  const v = parseInt(($("hist3d-threshold") as HTMLInputElement).value, 10);
+  hist3d.setThreshold(Number.isFinite(v) ? v : 1);
+});
+$("hist3d-scale").addEventListener("input", () => {
+  hist3d.setScale(parseFloat(($("hist3d-scale") as HTMLInputElement).value));
+});
+$("hist3d-overlap").addEventListener("change", () => {
+  hist3d.setOverlap(($("hist3d-overlap") as HTMLInputElement).checked);
+});
+$("hist3d-spin").addEventListener("change", () => {
+  hist3d.setSpin(($("hist3d-spin") as HTMLInputElement).checked);
 });
 
 store.on("selection", (sel) => {

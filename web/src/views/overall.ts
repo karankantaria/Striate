@@ -12,8 +12,8 @@
 import { getSurface, type BinaryModel, type ScalarRaster } from "../api.ts";
 import { RasterCanvas, type CellPointerEvent } from "../canvas/raster.ts";
 import {
-  BYTE_CLASS_COLORS, BYTE_CLASS_NAMES, byteClassLut, GRAY, VIRIDIS,
-  type Lut, type Theme,
+  BYTE_CLASS_COLORS, BYTE_CLASS_NAMES, byteClassLut, GRAY, LOCATE_RGB,
+  VIRIDIS, type Lut, type Theme,
 } from "../colormap.ts";
 import { d2xy, offsetAtXY } from "../hilbert.ts";
 import {
@@ -73,6 +73,7 @@ export class OverallView {
       this.view.redrawOverlay();
     });
     store.on("hover", () => this.view.redrawOverlay());
+    store.on("locate", () => this.view.redrawOverlay());
     store.on("theme", (t) => { this.theme = t; this.applyLutForMode(); this.renderLegend(); });
   }
 
@@ -270,13 +271,17 @@ export class OverallView {
     const fill = css.getPropertyValue("--select-fill").trim();
     const edge = css.getPropertyValue("--select-edge").trim();
 
+    this.locateOverlay(ctx, v);   // under the selection band
+
     if (sel && sel.end > this.start && sel.start < this.end && this.nCells) {
       const c0 = this.cellOfOffset(Math.max(sel.start, this.start));
       const c1 = this.cellOfOffset(Math.min(sel.end, this.end) - 1);
+      ctx.fillStyle = fill;
       if (this.layout === "hilbert") {
-        this.hilbertBand(ctx, v, c0, c1, fill);
+        this.hilbertRun(ctx, v, c0, c1);
       } else {
-        this.linearBand(ctx, v, c0, c1, fill, edge);
+        this.linearRun(ctx, v, c0, c1);
+        this.markerTicks(ctx, v, c0, c1, edge);
       }
     }
 
@@ -296,11 +301,10 @@ export class OverallView {
     }
   }
 
-  private linearBand(
-    ctx: CanvasRenderingContext2D, v: RasterCanvas,
-    c0: number, c1: number, fill: string, edge: string,
+  /** Fill cells c0..c1 (row-major) with the current fillStyle. */
+  private linearRun(
+    ctx: CanvasRenderingContext2D, v: RasterCanvas, c0: number, c1: number,
   ): void {
-    ctx.fillStyle = fill;
     const y0 = Math.floor(c0 / v.w), y1 = Math.floor(c1 / v.w);
     const x0 = c0 % v.w, x1 = c1 % v.w;
     const cw = v.cellCssW, chh = v.cellCssH;
@@ -317,25 +321,61 @@ export class OverallView {
       [px, py] = v.cellToCss(0, y1);
       ctx.fillRect(px, py, (x1 + 1) * cw, chh);            // last partial row
     }
-    // m1/m2 marker ticks
+  }
+
+  private markerTicks(
+    ctx: CanvasRenderingContext2D, v: RasterCanvas,
+    c0: number, c1: number, edge: string,
+  ): void {
     ctx.fillStyle = edge;
-    const [m1x, m1y] = v.cellToCss(x0, y0);
-    const [m2x, m2y] = v.cellToCss(x1, y1);
+    const chh = v.cellCssH, cw = v.cellCssW;
+    const [m1x, m1y] = v.cellToCss(c0 % v.w, Math.floor(c0 / v.w));
+    const [m2x, m2y] = v.cellToCss(c1 % v.w, Math.floor(c1 / v.w));
     ctx.fillRect(m1x - 1, m1y, 2, chh);
     ctx.fillRect(m2x + cw - 1, m2y, 2, chh);
   }
 
-  private hilbertBand(
-    ctx: CanvasRenderingContext2D, v: RasterCanvas,
-    c0: number, c1: number, fill: string,
+  /** Fill cells c0..c1 along the hilbert curve with the current fillStyle. */
+  private hilbertRun(
+    ctx: CanvasRenderingContext2D, v: RasterCanvas, c0: number, c1: number,
   ): void {
-    ctx.fillStyle = fill;
     const cw = Math.max(v.cellCssW, 1), chh = Math.max(v.cellCssH, 1);
     const step = Math.max(1, Math.floor((c1 - c0) / 60000)); // cap the work
     for (let d = c0; d <= c1; d += step) {
       const [x, y] = d2xy(this.order, d);
       const [px, py] = v.cellToCss(x, y);
       ctx.fillRect(px, py, cw, chh);
+    }
+  }
+
+  /** Brush-to-locate density from the bigram view, tinted over the map
+      with alpha driven by per-bin match density. */
+  private locateOverlay(ctx: CanvasRenderingContext2D, v: RasterCanvas): void {
+    const loc = this.store.state.locate;
+    if (!loc || !this.nCells || loc.max === 0) return;
+    if (loc.end <= this.start || loc.start >= this.end) return;
+    const rgb = LOCATE_RGB[this.theme];
+    const n = loc.density.length;
+    const span = loc.end - loc.start;
+    let i = 0;
+    while (i < n) {                       // runs of adjacent non-empty bins
+      if (loc.density[i] === 0) { i++; continue; }
+      let j = i, dmax = 0;
+      while (j < n && loc.density[j] > 0) {
+        if (loc.density[j] > dmax) dmax = loc.density[j];
+        j++;
+      }
+      const o0 = Math.max(loc.start + Math.floor((i * span) / n), this.start);
+      const o1 = Math.min(loc.start + Math.ceil((j * span) / n), this.end);
+      if (o1 > o0) {
+        const c0 = this.cellOfOffset(o0);
+        const c1 = this.cellOfOffset(o1 - 1);
+        const alpha = 0.25 + 0.5 * (dmax / loc.max);
+        ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+        if (this.layout === "hilbert") this.hilbertRun(ctx, v, c0, c1);
+        else this.linearRun(ctx, v, c0, c1);
+      }
+      i = j;
     }
   }
 

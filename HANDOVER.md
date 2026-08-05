@@ -4,7 +4,7 @@
 > the "how to run" section if it changed, and the gotchas list. `PLAN.md` is
 > the full design doc; this file is the fast on-ramp for a new session.
 
-## Status (updated 2026-08-05, end of Phase 7)
+## Status (updated 2026-08-05, end of Phase 8)
 
 | Phase | What | State |
 |---|---|---|
@@ -15,14 +15,11 @@
 | P4 | Capstone decode core (linear sweep + recursive descent, objdump differential) | ✅ done |
 | P5 | Function discovery + CFG JSON (5-tier cascade, jump tables, measured stripped recall) | ✅ done |
 | P6 | Content-addressed cache + FastAPI service (binary wire formats, X-Meta header) | ✅ done |
-| **P7** | **Web shell: Overall + Zoomed + Plot + SelectionStore + hex peek** | ✅ **done (this session)** |
-| P8 | 2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate) | ⬜ next |
-| P9 | Image view, dot plot, full hex viewer | ⬜ (parallel with P8 after P7) |
-| P10 | CFG view (elkjs in a worker, Canvas2D) | ⬜ (parallel with P8/P9) |
+| P7 | Web shell: Overall + Zoomed + Plot + SelectionStore + hex peek | ✅ done |
+| **P8** | **2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate)** | ✅ **done (this session)** |
+| P9 | Image view, dot plot, full hex viewer | ⬜ next (parallel with P10) |
+| P10 | CFG view (elkjs in a worker, Canvas2D) | ⬜ (parallel with P9) |
 | P11 | Triage verdict + file navigation | ⬜ needs all views |
-
-Nothing from this session is committed (per instruction). `git status` shows:
-modified `.gitignore`, `src/binviz/service.py`; new `tests/test_phase7.py`, `HANDOVER.md`, `web/`.
 
 ## How to run
 
@@ -45,8 +42,8 @@ Open http://localhost:5173 and paste an absolute path (e.g.
 
 Tests:
 ```bash
-.venv/Scripts/python -m pytest -q         # backend, 267 passing (perf marked-out)
-cd web && npm test                        # 13 node --test units (hilbert/off↔va/colormap)
+.venv/Scripts/python -m pytest -q         # backend, 279 passing (perf marked-out)
+cd web && npm test                        # 19 node --test units (hilbert/off↔va/colormap/transforms)
 cd web && npm run build                   # tsc --noEmit (strict) + vite build
 ```
 
@@ -96,7 +93,55 @@ the views linked rather than adjacent.
   level: 4 KiB random block in 32 MiB of zeros survives binning in the `max`
   band (>7.5 bits/byte) while the mean band would hide it (<1.0).
 
-## Gotchas discovered this session (read before touching P8–P10)
+## What Phase 8 built
+
+Backend (`src/binviz/service.py`, tested in `tests/test_phase8.py`):
+- `POST /api/{id}/hist/locate` — brush-to-locate. JSON body
+  `{first0, first1, second0, second1, dtype?, start?, end?, n?}` (inclusive
+  cell rect, first = element i / second = element i+1, matching /hist n=2
+  axes) → n uint32 density bins over [start, end). Chunked so a
+  whole-file-matching rect never materialises a full-size index array; all
+  mmap views die inside a helper before `MappedFile.close()` (Windows
+  BufferError otherwise — same trap as `_compute_hist`).
+- `GET /hist3` grew `limit=` — a prefix cap. Whole-file u8 responses are
+  count-descending on disk so it's a slice; capped computed subranges are
+  sorted densest-first to match. Meta gains `capped`. The frontend always
+  passes `limit=1e6`: a 100 MB random file at threshold 1 would otherwise
+  ship ~268 MB of points.
+
+Frontend:
+- `src/transforms.ts` — client-side mirror of `ngram.py:to_display`
+  (log1p/rank/sqrt/linear, peak-normalised, numpy-truncation semantics;
+  unit-tested in `web/test/transforms.test.ts`). Transforms apply
+  client-side over raw /hist counts so switching modes never refetches.
+- `src/views/hist2d.ts` — 256×256 bigram canvas (pixelated), axis ticks at
+  00/20/41/7f/ff, tooltip with counts + quantise bin ranges, brush →
+  locate → `store.setLocate`, click clears. Recomputes on selection +
+  dtype. Orientation: counts are `[first*256+second]`, drawn x = b[i],
+  y = b[i+1] (transpose happens in `renderScratch`).
+- `src/views/hist3d.ts` — raw WebGL2 point cloud. Viridis evaluated in the
+  shader (same polynomial as colormap.ts), size/colour from log count,
+  `overlap` = additive blending with depth-write off vs depth-tested
+  opaque, trackball + wheel zoom + idle auto-spin (resumes 2.5 s after the
+  last interaction), cube wireframe with labels projected onto a 2D
+  overlay via the same MVP. Additive intensity is dimmed by point count
+  (`u_dim`) so a 1M-point uniform cloud reads as a density gradient, not a
+  white cube.
+- `SelectionStore` gained `dtype` (shared element dtype — P9's image view
+  should read it too) and `locate` (density highlight) + events. Overall
+  and plot views tint locate density in the attention orange
+  (`LOCATE_RGB`), alpha scaled by per-bin density.
+- New Bigram/Trigram panes in a third grid row; dtype picker lives in the
+  Bigram pane head but writes the shared store. Picker resets to u8 on
+  open (store.setModel resets state).
+
+Verified live in the browser: hello_static bigram/trigram + brush-to-locate
+highlighting in overall+plot, selection-driven recompute, ramp16.bin as
+u16le collapsing to the diagonal (and the trigram to a 3-D diagonal line),
+urandom filling the cube vs ascii.txt corner cluster. Plates for the
+dtype criterion: `docs/plates/ngram2_ramp16_{u8,u16le}.png`.
+
+## Gotchas discovered this session (read before touching P9–P10)
 
 1. **Never let the browser HTTP-cache `/api`.** 404 and 410 are
    *heuristically cacheable* per RFC 7231 — a transient mid-analysis 410 got
@@ -123,13 +168,28 @@ the views linked rather than adjacent.
 6. Vite's file watcher occasionally missed edits mid-session (Windows);
    if the browser seems to run stale code, restart `npm run dev` (add
    `--force` to also drop the prebundle cache).
+7. **numpy views of the mmap must all die before `MappedFile.close()`.**
+   For u8, `quantise()` returns a *view* of the file; any slice of it
+   (loop variables included) keeps the mmap pinned and close() raises
+   BufferError — on Windows this surfaces as a 500. Do per-chunk work in
+   a helper function so its locals are freed on return (see
+   `_locate_density`), and `del` the top-level arrays before leaving the
+   `with` block.
+8. **Trigram wire size needs the `limit` param.** `/hist3?threshold=1` on
+   high-entropy input is ~16.7M cells × 16 B. Always pass a limit from the
+   UI; the response is densest-first either way, and `meta.capped` says
+   when you're not seeing everything (hist3d shows "densest shown").
+9. Corpus `ramp16.bin` is `<u2` arange over 128 Ki elements, i.e. it
+   **wraps mod 65536** — as u16le its bigram is the diagonal *plus* a few
+   (255, 0) wrap cells. Tests that assert pure diagonality build their own
+   non-wrapping ramp (see `tests/test_phase8.py`).
 
-## Where P8/P9/P10 plug in
+## Where P9/P10 plug in
 
-P7 built the pieces they import: `SelectionStore`, `api.ts`, `colormap.ts`,
-`canvas/raster.ts`, the tooltip singleton, and the pane grid in
-`index.html`/`theme.css`. Per PLAN they are parallel once this shell exists.
-Backend endpoints they need already exist and are tested: `/hist`, `/hist3`
-(sparse `[x,y,z,count] i32`, count-descending so threshold = prefix),
-`/surface/image|ngram2|dotplot` (dotplot keeps a progressive accumulator
-server-side, `meta.progress`), `/functions`, `/cfg/{va}`, `/bytes`.
+P7/P8 built the pieces they import: `SelectionStore` (incl. the shared
+`dtype` the image view should follow), `api.ts`, `colormap.ts`,
+`canvas/raster.ts`, `transforms.ts`, the tooltip singleton, and the pane
+grid in `index.html`/`theme.css`. Backend endpoints they need already
+exist and are tested: `/surface/image|dotplot` (dotplot keeps a
+progressive accumulator server-side, `meta.progress`), `/functions`,
+`/cfg/{va}`, `/bytes`.

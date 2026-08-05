@@ -10,7 +10,7 @@
    survivors. */
 
 import { getSignal, type BinaryModel, type Region, type SignalBand, type SignalInfo } from "../api.ts";
-import { SERIES, type Theme } from "../colormap.ts";
+import { LOCATE_RGB, SERIES, type Theme } from "../colormap.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
 import { hideTooltip, showTooltip } from "../tooltip.ts";
 
@@ -63,6 +63,7 @@ export class PlotView {
       else this.draw();
     });
     store.on("hover", () => this.draw());
+    store.on("locate", () => this.draw());
     store.on("theme", (t) => {
       this.theme = t;
       this.assignColors();
@@ -224,6 +225,7 @@ export class PlotView {
     const selEdge = css.getPropertyValue("--select-edge").trim();
 
     this.drawRibbon(ctx, w);
+    this.drawLocate(ctx, w, h);
 
     for (const { lane, y, h: lh } of this.laneRects()) {
       const band = lane.band;
@@ -308,6 +310,39 @@ export class PlotView {
       ctx.lineTo(x + 0.5, h - AXIS_H);
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+  }
+
+  /** Brush-to-locate density from the bigram view: vertical tint columns
+      wherever the brushed byte pairs occur, alpha driven by density. */
+  private drawLocate(
+    ctx: CanvasRenderingContext2D, w: number, h: number,
+  ): void {
+    const loc = this.store.state.locate;
+    if (!loc || loc.max === 0 || this.x1 <= this.x0) return;
+    if (loc.end <= this.x0 || loc.start >= this.x1) return;
+    const rgb = LOCATE_RGB[this.theme];
+    const n = loc.density.length;
+    const span = loc.end - loc.start;
+    const top = this.plotTop(), bot = h - AXIS_H;
+    let i = 0;
+    while (i < n) {                       // runs of adjacent non-empty bins
+      if (loc.density[i] === 0) { i++; continue; }
+      let j = i, dmax = 0;
+      while (j < n && loc.density[j] > 0) {
+        if (loc.density[j] > dmax) dmax = loc.density[j];
+        j++;
+      }
+      const o0 = Math.max(loc.start + Math.floor((i * span) / n), this.x0);
+      const o1 = Math.min(loc.start + Math.ceil((j * span) / n), this.x1);
+      if (o1 > o0) {
+        const xa = this.xOfOffset(o0, w);
+        const xb = this.xOfOffset(o1, w);
+        const alpha = 0.15 + 0.4 * (dmax / loc.max);
+        ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+        ctx.fillRect(xa, top, Math.max(xb - xa, 1), bot - top);
+      }
+      i = j;
     }
   }
 

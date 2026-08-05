@@ -100,16 +100,31 @@ select {
   gap: 8px;
   padding: 8px;
   grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr) minmax(240px, 0.9fr);
-  grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.1fr);
   grid-template-areas:
     "overall zoom side"
-    "overall plot hex";
+    "overall plot hex"
+    "hist2d hist3d hex";
 }
 #overall-pane { grid-area: overall; }
 #zoom-pane { grid-area: zoom; }
 #plot-pane { grid-area: plot; }
 #side-pane { grid-area: side; }
 #hex-pane { grid-area: hex; }
+#hist2d-pane { grid-area: hist2d; }
+#hist3d-pane { grid-area: hist3d; }
+
+.pane-head input[type="number"] {
+  width: 52px;
+  padding: 1px 4px;
+  border: 1px solid var(--baseline);
+  border-radius: 4px;
+  background: var(--surface-1);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+.pane-head input[type="range"] { width: 64px; }
 
 .pane {
   display: flex; flex-direction: column; min-height: 0; min-width: 0;

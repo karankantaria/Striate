@@ -67,6 +67,52 @@
           </div>
           <pre id="hex-dump" class="scroll"></pre>
         </section>
+
+        <section id="hist2d-pane" class="pane">
+          <div class="pane-head">
+            <h2>Bigram</h2>
+            <select id="hist2d-display" title="display transform">
+              <option value="log1p">log1p</option>
+              <option value="rank">rank</option>
+              <option value="sqrt">sqrt</option>
+              <option value="linear">linear</option>
+            </select>
+            <select id="dtype-select" title="element dtype (shared)">
+              <option value="u8">u8</option>
+              <option value="u12">u12</option>
+              <option value="u16le">u16le</option>
+              <option value="u16be">u16be</option>
+              <option value="u32le">u32le</option>
+              <option value="u32be">u32be</option>
+              <option value="u64le">u64le</option>
+              <option value="u64be">u64be</option>
+              <option value="f32le">f32le</option>
+              <option value="f32be">f32be</option>
+              <option value="f64le">f64le</option>
+              <option value="f64be">f64be</option>
+            </select>
+            <span id="hist2d-status" class="range-label muted"></span>
+            <button id="locate-clear" title="clear brush highlight">✕</button>
+          </div>
+          <div id="hist2d-canvas" class="canvas-host"></div>
+        </section>
+
+        <section id="hist3d-pane" class="pane">
+          <div class="pane-head">
+            <h2>Trigram</h2>
+            <label class="toggle" title="minimum cell count">thr
+              <input type="number" id="hist3d-threshold" min="1" step="1" value="1" />
+            </label>
+            <label class="toggle" title="point size">size
+              <input type="range" id="hist3d-scale" min="0.5" max="6" step="0.5" value="2" />
+            </label>
+            <label class="toggle" title="additive blending reveals interior density">
+              <input type="checkbox" id="hist3d-overlap" checked />overlap</label>
+            <label class="toggle"><input type="checkbox" id="hist3d-spin" checked />spin</label>
+            <span id="hist3d-status" class="range-label muted"></span>
+          </div>
+          <div id="hist3d-canvas" class="canvas-host"></div>
+        </section>
       </main>
 
       <div id="empty-state">

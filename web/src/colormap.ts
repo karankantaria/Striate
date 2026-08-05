@@ -108,6 +108,13 @@ export const SERIES: Record<Theme, string[]> = {
   dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#c559c5", "#008300"],
 };
 
+// Brush-to-locate highlight ink as "r,g,b" for rgba() templating with a
+// density-driven alpha — the attention orange, so it cannot be confused
+// with the blue selection band it draws alongside.
+export const LOCATE_RGB: Record<Theme, string> = {
+  light: "235,104,52", dark: "217,89,38",
+};
+
 /* ---------------------------------------------------------- rendering */
 
 /** Paint a scalar raster through a LUT into RGBA pixels. */

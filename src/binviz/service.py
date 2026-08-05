@@ -363,12 +363,47 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                             "end": end, "quantise": qmeta,
                         }))
 
+    @app.post("/api/{id}/hist/locate")
+    async def hist_locate(id: str, request: Request):
+        """Brush-to-locate: where in the file do these byte pairs occur?
+
+        Body: {first0, first1, second0, second1, dtype?, start?, end?, n?}
+        — an inclusive rect of quantised bigram cells (first = element i,
+        second = element i+1, matching /hist n=2 axes). Returns n uint32
+        bins of match counts over [start, end), so the overall/plot views
+        can highlight the offsets behind a bigram structure.
+        """
+        cache = get_cache(id)
+        try:
+            doc = await request.json()
+        except json.JSONDecodeError:
+            raise HTTPException(400, "JSON body required")
+        if not isinstance(doc, dict):
+            raise HTTPException(400, "JSON object body required")
+
+        def cell(key: str) -> int:
+            try:
+                return max(0, min(255, int(doc.get(key, 0))))
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"bad cell value for {key!r}")
+
+        f0, f1 = sorted((cell("first0"), cell("first1")))
+        s0, s1 = sorted((cell("second0"), cell("second1")))
+        dtype = doc.get("dtype", "u8")
+        n = max(1, min(int(doc.get("n", 2048)), 100_000))
+        payload, meta = _compute_locate(
+            source_path(cache), dtype, int(doc.get("start", 0)),
+            int(doc.get("end", -1)), (f0, f1, s0, s1), n)
+        return Response(payload, media_type="application/octet-stream",
+                        headers=_meta_headers(meta))
+
     @app.get("/api/{id}/hist3")
     def hist3(id: str, threshold: int = 1, dtype: str = "u8",
-              start: int = 0, end: int = -1):
+              start: int = 0, end: int = -1, limit: int = 0):
         cache = get_cache(id)
         size = (cache.meta() or {}).get("size", 0)
         threshold = max(1, threshold)
+        limit = max(0, limit)
         whole = start == 0 and (end < 0 or end >= size)
         if whole and dtype == "u8":
             require(cache, "trigram")
@@ -377,21 +412,26 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                                 headers=_meta_headers({
                                     "points": 0, "total_points": 0,
                                     "threshold": threshold, "dtype": "u8",
+                                    "capped": False,
                                     "layout": "[x,y,z,count] i32",
                                 }))
             pts = cache.memmap("trigram.sparse", TRIGRAM_DTYPE)
             pts = pts.reshape(-1, 4)
-            # count-descending on disk: a threshold is a prefix slice
+            # count-descending on disk: threshold and limit are prefix slices
             cut = int(np.searchsorted(-pts[:, 3], -threshold, "right"))
+            capped = bool(limit) and cut > limit
+            if capped:
+                cut = limit
             return Response(pts[:cut].tobytes(),
                             media_type="application/octet-stream",
                             headers=_meta_headers({
                                 "points": cut, "total_points": len(pts),
                                 "threshold": threshold, "dtype": "u8",
+                                "capped": capped,
                                 "layout": "[x,y,z,count] i32",
                             }))
         payload, meta = _compute_hist3(
-            source_path(cache), dtype, start, end, threshold, size)
+            source_path(cache), dtype, start, end, threshold, size, limit)
         return Response(payload, media_type="application/octet-stream",
                         headers=_meta_headers(meta))
 
@@ -485,8 +525,63 @@ def _compute_hist(path: str, n: int, dtype: str, start: int, end: int):
     return counts, qmeta, start, end
 
 
+_LOCATE_CHUNK = 1 << 22
+
+
+def _locate_density(bins: np.ndarray, rect: tuple[int, int, int, int],
+                    n: int, span: int, ebits: int):
+    f0, f1, s0, s1 = rect
+    density = np.zeros(n, dtype=np.int64)
+    matches = 0
+    pairs = max(0, len(bins) - 1)
+    # Chunked so a rect matching the whole file never materialises a
+    # full-size index array (the mask is the only per-chunk transient).
+    for i0 in range(0, pairs, _LOCATE_CHUNK):
+        i1 = min(i0 + _LOCATE_CHUNK, pairs)
+        first = bins[i0:i1]
+        second = bins[i0 + 1:i1 + 1]
+        mask = (first >= f0) & (first <= f1) \
+            & (second >= s0) & (second <= s1)
+        idx = np.flatnonzero(mask).astype(np.int64)
+        if idx.size == 0:
+            continue
+        idx += i0
+        matches += idx.size
+        byte_off = (idx * ebits) >> 3          # element index -> byte offset
+        density += np.bincount(byte_off * n // span, minlength=n)
+    return density, matches
+
+
+def _compute_locate(path: str, dtype: str, start: int, end: int,
+                    rect: tuple[int, int, int, int], n: int):
+    from .elements import DTYPES, element_width_bits, elements, quantise
+
+    if dtype not in DTYPES:
+        raise HTTPException(400, f"unknown dtype {dtype!r}; known: "
+                                 f"{list(DTYPES)}")
+    f0, f1, s0, s1 = rect
+    ebits = element_width_bits(dtype)
+    with MappedFile.open(path) as mf:
+        end = mf.size if end < 0 else min(end, mf.size)
+        start = max(0, min(start, end))
+        span = max(1, end - start)
+        vals = elements(mf.view[start:end], dtype)
+        bins, qmeta = quantise(vals, dtype)
+        del vals
+        pairs = max(0, len(bins) - 1)
+        # in a helper so every mmap view dies before MappedFile.close()
+        density, matches = _locate_density(bins, rect, n, span, ebits)
+        del bins
+    return density.astype("<u4").tobytes(), {
+        "n": n, "dtype": dtype, "start": start, "end": end,
+        "rect": {"first0": f0, "first1": f1, "second0": s0, "second1": s1},
+        "matches": matches, "pairs": pairs, "quantise": qmeta,
+        "layout": "density u32",
+    }
+
+
 def _compute_hist3(path: str, dtype: str, start: int, end: int,
-                   threshold: int, size: int):
+                   threshold: int, size: int, limit: int = 0):
     from .cache import pack_trigram
     from .elements import DTYPES, elements, quantise
     from .stats import ngram
@@ -503,12 +598,19 @@ def _compute_hist3(path: str, dtype: str, start: int, end: int,
         coords, counts = ngram(bins, 3)
         coords, counts = coords.copy(), counts.copy()
         del bins
+    total = int(len(counts))
     keep = counts >= threshold
-    payload = pack_trigram(coords[keep], counts[keep])
+    coords, counts = coords[keep], counts[keep]
+    capped = bool(limit) and len(counts) > limit
+    if capped:
+        # densest first, matching the cached whole-file ordering
+        top = np.argsort(-counts.astype(np.int64), kind="stable")[:limit]
+        coords, counts = coords[top], counts[top]
+    payload = pack_trigram(coords, counts)
     return payload, {
-        "points": int(keep.sum()), "total_points": int(len(counts)),
+        "points": int(len(counts)), "total_points": total,
         "threshold": threshold, "dtype": dtype, "start": start, "end": end,
-        "quantise": qmeta, "layout": "[x,y,z,count] i32",
+        "capped": capped, "quantise": qmeta, "layout": "[x,y,z,count] i32",
     }
 
 

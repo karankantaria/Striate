@@ -9,11 +9,31 @@ import type { BinaryModel, Region } from "./api.ts";
 
 export interface OffsetRange { start: number; end: number } // half-open [start, end)
 
+/** The shared element-reinterpretation dtype (PLAN §P2); the histogram
+    views read and write it, and P9's image view will follow it too. */
+export type ElementDtype =
+  | "u8" | "u12" | "u16le" | "u16be" | "u32le" | "u32be"
+  | "u64le" | "u64be" | "f32le" | "f32be" | "f64le" | "f64be";
+
+/** Brush-to-locate result: where in the file the brushed byte pairs
+    occur, as n density bins over [start, end). Overall and plot views
+    render it as a highlight over their own x-axes. */
+export interface LocateHighlight {
+  density: Uint32Array;
+  max: number;                      // max bin count, for normalisation
+  start: number;
+  end: number;
+  matches: number;
+  label: string;                    // human-readable brushed rect
+}
+
 export interface Selection {
   offsetRange: OffsetRange | null;
   vaRange: OffsetRange | null;      // derived; null when unmapped
   hoveredOffset: number | null;
   caret: number | null;             // hex-peek anchor
+  dtype: ElementDtype;
+  locate: LocateHighlight | null;
 }
 
 type Events = {
@@ -21,6 +41,8 @@ type Events = {
   hover: number | null;
   caret: number | null;
   theme: "light" | "dark";
+  dtype: ElementDtype;
+  locate: LocateHighlight | null;
 };
 
 type Handler<K extends keyof Events> = (v: Events[K]) => void;
@@ -28,9 +50,10 @@ type Handler<K extends keyof Events> = (v: Events[K]) => void;
 export class SelectionStore {
   state: Selection = {
     offsetRange: null, vaRange: null, hoveredOffset: null, caret: null,
+    dtype: "u8", locate: null,
   };
   private handlers: { [K in keyof Events]: Handler<K>[] } = {
-    selection: [], hover: [], caret: [], theme: [],
+    selection: [], hover: [], caret: [], theme: [], dtype: [], locate: [],
   };
   private model: BinaryModel | null = null;
 
@@ -38,6 +61,7 @@ export class SelectionStore {
     this.model = model;
     this.state = {
       offsetRange: null, vaRange: null, hoveredOffset: null, caret: null,
+      dtype: "u8", locate: null,
     };
   }
 
@@ -74,6 +98,17 @@ export class SelectionStore {
 
   setTheme(theme: "light" | "dark"): void {
     this.emit("theme", theme);
+  }
+
+  setDtype(dtype: ElementDtype): void {
+    if (dtype === this.state.dtype) return;
+    this.state.dtype = dtype;
+    this.emit("dtype", dtype);
+  }
+
+  setLocate(locate: LocateHighlight | null): void {
+    this.state.locate = locate;
+    this.emit("locate", locate);
   }
 
   private vaRangeOf(r: OffsetRange): OffsetRange | null {
