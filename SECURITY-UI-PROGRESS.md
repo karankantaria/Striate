@@ -36,15 +36,14 @@ are not mine to do (see "Blocked" below). Security items first.
 | **§3.2** | **First-run state** | ✅ **done** |
 | **§3.4** | **Navigation (ten panes render at once)** | ✅ **done** |
 | **§3.6** | **Accessibility baseline** | ✅ **done** |
-| §3.7 | 404-after-open race | ⬜ not started |
+| **§3.7** | **404-after-open race** | ✅ **done** |
 | §2.x | Optional login mode | ⬜ not started |
 | §4.2–4.5 | Pins, LICENSE, Trusted Publishing | ⬜ not started (SECURITY.md ✅, that was §4.4) |
 
-Test baseline after §3.6: **387 backend** (was 316), **86 frontend**
-(was 37), `npm run build` clean. **All of §1 (S1–S7) and all of §3 and §4.1
+Test baseline after §3.7: **388 backend** (was 316), **86 frontend**
+(was 37), `npm run build` clean. **All of §1 (S1–S7), all of §3, and §4.1
 are closed** — every security finding and every UI item in the work order.
-What remains is §3.7 (an API-shape fix), §2.x (the optional login) and
-§4.2–4.5 (release metadata).
+What remains is §2.x (the optional login) and §4.2–4.5 (release metadata).
 
 > **Building a wheel now has a required first step:**
 > ```sh
@@ -713,6 +712,58 @@ arrow/Enter round trip above; the help dialog opening from the button and
 from `?`, toggling off, closing on Escape, and **not** hijacking `?` typed
 into the path field. Zero console output.
 
+### §3.7 — the 404-after-open race ✅
+
+**Fixed 2026-08-06.** `POST /api/open` returned 200 and an id that pointed
+at nothing until the analysis thread got round to writing its first
+`meta.json`, so the very next `GET /api/{id}/status` 404'd for a few hundred
+milliseconds. Every client had to know that: the frontend special-cased it,
+and the work order records two throwaway review scripts learning it the hard
+way.
+
+`get_cache` gained `pending_ok`, used **only** by `/status`: an id with a
+live job but nothing on disk yet resolves instead of 404ing. Everything else
+genuinely needs the artifacts and still says 404 — the test asserts
+`/api/{sha}/model` during the same window to pin that the pass does not leak.
+
+Two decisions in the shape of the fix:
+
+1. **The synthesised document speaks the same vocabulary as a real one** —
+   `state: "running"`, every artifact `"pending"`, which is exactly what
+   `analyze()` writes a moment later. My first attempt used
+   `state: "analyzing"` (the word `open`'s *own* response uses) and an empty
+   artifacts map; the test caught it. Inventing a fourth state would have
+   moved the special case from the status code into the body rather than
+   removing it.
+2. **200, not 202.** The work order offers 202 as an option. RFC 9110 puts
+   202 on the response that *accepts* the work — that is `POST /api/open` —
+   and using it on the poll would split "how far along is this" across the
+   status code and the body when `state` and `artifacts` already say it
+   precisely. It would also have made progressive polling awkward: a client
+   would have to accept 202 to see partial readiness at all. A 404 still
+   means what it should.
+
+> Note for whoever touches `open`: its response says `state: "analyzing"`
+> while meta.json says `"running"` for the same condition. Two vocabularies
+> for one fact. Pre-existing and left alone as out of scope, but it is a
+> wart, and it is what my first version of this fix tripped over.
+
+**The frontend workaround is gone**, which is the actual point — `main.ts`
+no longer has a 404 branch in `poll()`, so a 404 there now means what it
+says. Four test polling loops that *tolerated* the 404 (`if
+resp.status_code == 200:`, one with a comment explaining the race) became
+assertions, turning the workaround into four free regression tests.
+
+The new test holds the window open with a blocked `analyze` rather than
+racing it — the real window is a few hundred ms, so a polling test would
+pass on a slow machine and prove nothing on a fast one. Confirmed it fails
+without the fix before keeping it.
+
+**Verified against a genuinely cold cache** (a fresh `--cache` dir, so the
+race is real rather than short-circuited by a warm entry): opening a 3.6 MiB
+`hello_O0` produced **6 status polls, all 200**, through to `ready`. Zero
+console output.
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -740,14 +791,9 @@ view, give it a `grid-area`, add it to a workspace's `panes`, add its slot
 to that workspace's `grid-template-areas`. The tests will tell you if you
 forgot one of those.
 
-**All of §3 is now closed**, so the UI side of the work order is done.
+**All of §1, §3 and §4.1 are now closed** — every security finding and the
+whole UI section. Two groups remain:
 
-What is left of the work order, in its own order:
-
-- **§3.7 — the 404-after-open race.** `POST /api/open` returns an id whose
-  `/status` 404s until the analysis thread writes `meta.json`; `main.ts:110`
-  special-cases it and every other client must too. Return the initial status
-  from `open`, or 202 while pending.
 - **§2.2/§2.5** optional login mode. §4.1 unblocked the `none` mode: with
   same-origin serving the server can inject the token into the served HTML,
   making the desktop app one-click while staying authenticated on the wire.

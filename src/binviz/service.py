@@ -437,13 +437,20 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
             raise HTTPException(403, "path is outside the served root")
         return real
 
-    def get_cache(id: str) -> BinaryCache:
+    def get_cache(id: str, *, pending_ok: bool = False) -> BinaryCache:
         if len(id) != 64 or any(c not in "0123456789abcdef" for c in id):
             raise HTTPException(400, "id must be a sha256 hex digest")
         cache = BinaryCache(id, root())
         if cache.meta() is None:
-            raise HTTPException(404, f"unknown binary {id[:12]}…; POST "
-                                     "/api/open first")
+            # `pending_ok` is the /status case (§3.7): between `open`
+            # returning an id and the analysis thread writing its first
+            # meta.json there is a window where the id is real but nothing
+            # is on disk yet. Only /status may see through it — every other
+            # route genuinely needs the artifacts and should say 404.
+            if not (pending_ok and id in app.state.jobs.active()):
+                raise HTTPException(404, f"unknown binary {id[:12]}…; POST "
+                                         "/api/open first")
+            return cache
         cache.touch()   # LRU: an entry being looked at is an entry in use
         return cache
 
@@ -575,12 +582,41 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
 
     # ---------------------------------------------------------- status
 
+    STATUS_KEYS = ("sha256", "size", "state", "error", "artifacts",
+                   "tool_version", "source", "progress")
+
     @app.get("/api/{id}/status")
     def status(id: str):
-        meta = get_cache(id).meta() or {}
-        return {k: meta.get(k) for k in
-                ("sha256", "size", "state", "error", "artifacts",
-                 "tool_version", "source", "progress")}
+        """Analysis state for an id, from the instant `open` returned it.
+
+        §3.7. This used to 404 until the analysis thread got round to
+        writing meta.json, so `POST /api/open` handed back a 200 and an id
+        that pointed at nothing for the next few hundred milliseconds.
+        Every client then had to special-case that 404 — the frontend did,
+        and two throwaway scripts written during the review had to learn it
+        the hard way before they replicated the workaround.
+
+        The status of a known analysis is a resource that exists as soon as
+        the analysis does, so it answers 200 from the start. The synthesised
+        pre-meta document deliberately speaks the **same vocabulary** the
+        first real meta.json will — `state: "running"`, every artifact
+        `"pending"` — rather than inventing a fourth state. A client must
+        not be able to tell it apart, or the special case has just moved
+        from the status code into the body.
+
+        Deliberately **not** 202: RFC 9110 puts 202 on the response that
+        *accepts* the work (that would be `POST /api/open`), and using it
+        here would split "how far along is this" across the status code and
+        the body, when `state` and `artifacts` already say it precisely. A
+        404 still means what it should — no such analysis.
+        """
+        meta = get_cache(id, pending_ok=True).meta() or {}
+        if not meta:
+            return {k: None for k in STATUS_KEYS} | {
+                "sha256": id, "state": "running", "tool_version": TOOL_VERSION,
+                "artifacts": {a: "pending" for a in ARTIFACTS},
+                "progress": {}}
+        return {k: meta.get(k) for k in STATUS_KEYS}
 
     @app.get("/api/{id}/model")
     def model(id: str):

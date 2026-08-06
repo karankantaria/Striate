@@ -50,13 +50,16 @@ def sha(client, spiked):
     deadline = time.time() + 300
     while time.time() < deadline:
         resp = client.get(f"/api/{sha}/status")
-        if resp.status_code == 200:      # 404 until the analysis thread
-            s = resp.json()              # writes its first meta.json
-            arts = s.get("artifacts") or {}
-            if arts.get("signals") == "ready":
-                return sha
-            if s.get("state") == "error":
-                pytest.fail(f"analysis error: {s}")
+        # never 404, from the first poll onwards (§3.7) — this loop used to
+        # tolerate one because /status raced the analysis thread's first
+        # meta.json write
+        assert resp.status_code == 200, resp.text
+        s = resp.json()
+        arts = s.get("artifacts") or {}
+        if arts.get("signals") == "ready":
+            return sha
+        if s.get("state") == "error":
+            pytest.fail(f"analysis error: {s}")
         time.sleep(0.1)
     pytest.fail("signals never became ready")
 

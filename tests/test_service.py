@@ -2,11 +2,13 @@
 
 import concurrent.futures
 import json
+import threading
 import time
 
 import numpy as np
 import pytest
 
+from binviz.cache import ARTIFACTS
 from conftest import OUT, authed_client, make_app, require_sample
 
 
@@ -21,7 +23,8 @@ def open_and_wait(client, path, timeout=180):
     deadline = time.time() + timeout
     while time.time() < deadline:
         s = client.get(f"/api/{sha}/status")
-        if s.status_code == 200 and s.json()["state"] in ("complete", "error"):
+        assert s.status_code == 200, s.text         # never 404 (§3.7)
+        if s.json()["state"] in ("complete", "error"):
             return sha, s.json()
         time.sleep(0.05)
     pytest.fail(f"analysis of {path} timed out")
@@ -205,7 +208,8 @@ def test_upload_octet_stream(client):
     deadline = time.time() + 60
     while time.time() < deadline:
         s = client.get(f"/api/{sha}/status")
-        if s.status_code == 200 and s.json()["state"] in ("complete", "error"):
+        assert s.status_code == 200, s.text         # never 404 (§3.7)
+        if s.json()["state"] in ("complete", "error"):
             break
         time.sleep(0.05)
     assert s.json()["state"] == "complete", s.json()
@@ -240,6 +244,72 @@ def test_unknown_and_malformed_ids(client):
     assert client.get("/api/nothex/status").status_code == 400
 
 
+def test_status_answers_the_instant_open_returns(tmp_path, manifest,
+                                                 monkeypatch):
+    """§3.7. `open` used to hand back a 200 and an id that pointed at
+    nothing until the analysis thread wrote its first meta.json, so the
+    very next request 404'd. A success response must not name a resource
+    that does not exist yet.
+
+    Held open deliberately rather than raced: the real window is a few
+    hundred milliseconds wide, so polling it would pass on a slow machine
+    and prove nothing on a fast one. Blocking `analyze` before it writes
+    anything reproduces exactly the state the bug lived in.
+    """
+    import binviz.cache as cache_mod
+
+    path = require_sample("hello_O2", manifest)
+    started, release = threading.Event(), threading.Event()
+    real = cache_mod.analyze
+
+    def blocked(cache, source, **kw):
+        started.set()
+        release.wait(30)          # nothing on disk for this id yet
+        return real(cache, source, **kw)
+
+    monkeypatch.setattr(cache_mod, "analyze", blocked)
+    app = make_app(tmp_path)
+    with authed_client(app) as c:
+        r = c.post("/api/open", json={"path": path})
+        assert r.status_code == 200, r.text
+        assert r.json()["state"] == "analyzing", "cache was not cold"
+        sha = r.json()["id"]
+        assert started.wait(10), "analysis thread never started"
+
+        try:
+            s = c.get(f"/api/{sha}/status")
+            assert s.status_code == 200, s.text     # the whole point
+            body = s.json()
+            assert body["sha256"] == sha
+            assert set(body) == {"sha256", "size", "state", "error",
+                                 "artifacts", "tool_version", "source",
+                                 "progress"}, "a different shape to a real one"
+            # same vocabulary as the first real meta.json — inventing a
+            # fourth state would move the special case from the status code
+            # into the body rather than removing it
+            assert body["state"] == "running", body
+            assert set(body["artifacts"]) == set(ARTIFACTS), body
+            assert set(body["artifacts"].values()) == {"pending"}, body
+
+            # a genuinely unknown id still 404s: the fix must not turn
+            # /status into an endpoint that invents an analysis for any hex
+            # string handed to it
+            assert c.get(f"/api/{'1' * 64}/status").status_code == 404
+            # and routes that really do need artifacts still say 409/404,
+            # rather than inheriting the pending pass
+            assert c.get(f"/api/{sha}/model").status_code == 404
+        finally:
+            release.set()
+
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            body = c.get(f"/api/{sha}/status").json()
+            if body["state"] in ("complete", "error"):
+                break
+            time.sleep(0.05)
+        assert body["state"] == "complete", body
+
+
 def test_concurrent_open_analyzes_once(tmp_path, manifest, monkeypatch):
     import binviz.cache as cache_mod
 
@@ -263,8 +333,8 @@ def test_concurrent_open_analyzes_once(tmp_path, manifest, monkeypatch):
         deadline = time.time() + 120
         while time.time() < deadline:
             s = client.get(f"/api/{sha}/status")
-            if (s.status_code == 200
-                    and s.json()["state"] in ("complete", "error")):
+            assert s.status_code == 200, s.text     # never 404 (§3.7)
+            if s.json()["state"] in ("complete", "error"):
                 break
             time.sleep(0.05)
         assert s.json()["state"] == "complete"

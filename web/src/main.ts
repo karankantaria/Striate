@@ -117,11 +117,8 @@ async function poll(): Promise<void> {
   try {
     st = await getStatus(currentId);
   } catch (e) {
-    const status = (e as { status?: number }).status;
-    if (status === 404) {           // analysis thread hasn't written meta yet
-      pollTimer = window.setTimeout(poll, 300);
-      return;
-    }
+    // No 404 special case any more: /status answers from the moment `open`
+    // returns an id, so a 404 here now means what it says (§3.7).
     setStatus(String((e as Error).message ?? e), true);
     return;
   }

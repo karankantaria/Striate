@@ -42,12 +42,12 @@ def _open_and_wait(client, path: str) -> str:
     deadline = time.time() + 300
     while time.time() < deadline:
         resp = client.get(f"/api/{sha}/status")
-        if resp.status_code == 200:
-            s = resp.json()
-            if s.get("state") == "complete":
-                return sha
-            if s.get("state") == "error":
-                pytest.fail(f"analysis error: {s}")
+        assert resp.status_code == 200, resp.text   # never 404 (§3.7)
+        s = resp.json()
+        if s.get("state") == "complete":
+            return sha
+        if s.get("state") == "error":
+            pytest.fail(f"analysis error: {s}")
         time.sleep(0.1)
     pytest.fail("analysis never completed")
 
