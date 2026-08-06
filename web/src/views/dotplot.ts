@@ -10,6 +10,8 @@
 import { getSurface, type BinaryModel } from "../api.ts";
 import { RasterCanvas } from "../canvas/raster.ts";
 import { VIRIDIS, type Theme } from "../colormap.ts";
+import { html } from "../dom.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import {
   fmtHex, fmtSize, type OffsetRange, type SelectionStore,
 } from "../store.ts";
@@ -169,6 +171,7 @@ export class DotPlotView {
       this.meta = raster.meta.meta as unknown as DotMeta;
       this.passes += 1;
       this.view.setRaster(raster.pixels, raster.w, raster.h);
+      clearPaneError(this.view.host);
     } catch (e) {
       if (seq !== this.fetchSeq) return;
       const status = (e as { status?: number }).status;
@@ -176,7 +179,8 @@ export class DotPlotView {
         window.clearTimeout(this.restartTimer);
         this.restartTimer = window.setTimeout(() => this.restart(), 700);
       } else {
-        console.warn("dotplot fetch failed:", e);
+        paneError(this.view.host, "could not compute the dot plot", e,
+                  () => this.restart());
       }
       return;
     } finally {
@@ -226,8 +230,6 @@ export class DotPlotView {
     const ox = this.cellOffset(cellX, this.r1, this.view.w);
     const oy = this.cellOffset(cellY, this.r2, this.view.h);
     if (ox === null || oy === null) return;
-    showTooltip(cx, cy,
-      `<span class="t2">x</span> ${fmtHex(ox)}<br>` +
-      `<span class="t2">y</span> ${fmtHex(oy)}`);
+    showTooltip(cx, cy, html`<span class="t2">x</span> ${fmtHex(ox)}<br><span class="t2">y</span> ${fmtHex(oy)}`);
   }
 }

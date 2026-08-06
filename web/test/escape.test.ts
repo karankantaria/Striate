@@ -78,6 +78,52 @@ test("no module defines its own escaper", () => {
   assert.deepEqual(offenders, [], "import esc from src/escape.ts instead");
 });
 
+/* §3.5's CI grep. `innerHTML` may appear in exactly one place — `setHtml`
+   in dom.ts — which only accepts SafeHtml, so the compiler refuses an
+   unescaped string. Anywhere else it is a string concatenation waiting to
+   become the next S2. */
+test("innerHTML is written in exactly one place", () => {
+  const offenders: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith(".ts")) continue;
+      if (p.endsWith(join("src", "dom.ts"))) continue;   // the one place
+      const code = readFileSync(p, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+      if (/\.innerHTML/.test(code)) offenders.push(p);
+    }
+  };
+  walk(SRC);
+  assert.deepEqual(offenders, [],
+    "build nodes with el()/replace(), or markup with the html`` tag");
+});
+
+/* The compiler does the real enforcing here — `setHtml` and `showTooltip`
+   take SafeHtml, which only the html`` tag produces, so an unescaped string
+   cannot reach the DOM. What a test can add is the structural fact that no
+   view hand-escapes any more: `esc` now has exactly one caller, and it is
+   the html`` tag itself.
+
+   (Resisted the urge to regex for "template literal containing a tag" —
+   it flags `querySelectorAll<HTMLElement>` and every other generic, and a
+   guard with false positives gets deleted by whoever hits it next.) */
+test("esc has exactly one caller: the html tag", () => {
+  const importers: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith(".ts") || p.endsWith(join("src", "escape.ts"))) continue;
+      if (/from "\.\.?\/escape\.ts"/.test(readFileSync(p, "utf8"))) importers.push(p);
+    }
+  };
+  walk(SRC);
+  assert.deepEqual(importers, [join(SRC, "dom.ts")],
+    "escaping should happen inside the html`` tag, not at call sites");
+});
+
 test("index.html carries a script-src 'self' CSP", () => {
   const html = readFileSync(join(SRC, "..", "index.html"), "utf8");
   const meta = /http-equiv="Content-Security-Policy"\s+content="([^"]*)"/.exec(html);

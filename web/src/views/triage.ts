@@ -4,7 +4,7 @@
    (the report is how you *get to* the evidence, per PLAN §P11). */
 
 import type { TriageDoc, TriageFinding, Verdict } from "../api.ts";
-import { esc } from "../escape.ts";
+import { el, replace, span } from "../dom.ts";
 import { fmtHex, type SelectionStore } from "../store.ts";
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -28,30 +28,34 @@ export class TriagePanel {
 
   clear(): void {
     this.doc = null;
-    this.el.innerHTML = `<div class="triage-pending muted">triage pending…</div>`;
+    replace(this.el, el("div", { class: "triage-pending muted" },
+                        "triage pending…"));
   }
 
   set(doc: TriageDoc): void {
     this.doc = doc;
-    let html =
-      `<div class="triage-verdict v-${doc.verdict}">` +
-      `<span class="v-label">${VERDICT_LABEL[doc.verdict]}</span>` +
-      `<span class="v-conf">confidence ${doc.confidence.toFixed(2)}</span>` +
-      `</div>`;
-    doc.findings.forEach((f, i) => {
-      const nav = f.offsets !== null;
-      html += `<div class="finding-row sev-${f.severity}${nav ? " nav" : ""}"` +
-        ` data-fi="${i}" title="${esc(f.detail)}">` +
-        `<span class="f-sev"></span>` +
-        `<span class="f-body"><span class="f-code">${esc(f.code)}</span> ` +
-        `<span class="f-detail">${esc(f.detail)}</span>` +
-        (nav ? `<span class="f-span">${fmtHex(f.offsets![0])}–${fmtHex(f.offsets![1])}</span>` : "") +
-        `</span></div>`;
-    });
-    if (!doc.findings.length) {
-      html += `<div class="muted triage-none">no findings</div>`;
-    }
-    this.el.innerHTML = html;
+    // `code` and `detail` are attacker-controlled (they quote the binary's
+    // own strings); as text nodes they are inert whatever they contain.
+    replace(this.el,
+      el("div", { class: `triage-verdict v-${doc.verdict}` },
+         span("v-label", VERDICT_LABEL[doc.verdict]),
+         span("v-conf", `confidence ${doc.confidence.toFixed(2)}`)),
+      ...doc.findings.map((f, i) => {
+        const nav = f.offsets !== null;
+        return el("div", {
+          class: `finding-row sev-${f.severity}${nav ? " nav" : ""}`,
+          "data-fi": i,
+          title: f.detail,
+        },
+          span("f-sev", null),
+          el("span", { class: "f-body" },
+             span("f-code", f.code), " ",
+             span("f-detail", f.detail),
+             nav && span("f-span",
+               `${fmtHex(f.offsets![0])}–${fmtHex(f.offsets![1])}`)));
+      }),
+      !doc.findings.length
+        && el("div", { class: "muted triage-none" }, "no findings"));
 
     this.el.querySelectorAll<HTMLElement>(".finding-row.nav").forEach((row) => {
       row.addEventListener("click", () => {

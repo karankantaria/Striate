@@ -3,7 +3,7 @@
    follows). */
 
 import type { BinaryModel } from "../api.ts";
-import { esc } from "../escape.ts";
+import { el, replace, span } from "../dom.ts";
 import { fmtHex, fmtSize, type SelectionStore } from "../store.ts";
 
 export class InfoPanel {
@@ -24,7 +24,7 @@ export class InfoPanel {
 
   private render(): void {
     const m = this.model;
-    if (!m) { this.el.innerHTML = ""; return; }
+    if (!m) { replace(this.el); return; }
     const rows: [string, string][] = [
       ["format", `${m.format} · ${m.arch} · ${m.bits}-bit ${m.endian}`],
       ["size", fmtSize(m.size)],
@@ -33,23 +33,23 @@ export class InfoPanel {
       ["imports", String(m.imports.length)],
       ["sha256", m.sha256.slice(0, 16) + "…"],
     ];
-    let html = "<table>" + rows.map(([k, v]) =>
-      `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join("") + "</table>";
+    // `r.name` is the raw ELF/PE section name and `w` quotes whatever the
+    // parser found — both attacker-controlled, both inert as text nodes.
+    replace(this.el,
+      el("table", {}, ...rows.map(([k, v]) =>
+        el("tr", {}, el("td", {}, k), el("td", {}, v)))),
 
-    if (m.warnings.length) {
-      html += `<h3>Warnings</h3>` + m.warnings.map((w) =>
-        `<div class="warn">⚠ ${esc(w)}</div>`).join("");
-    }
+      m.warnings.length > 0 && el("h3", {}, "Warnings"),
+      ...m.warnings.map((w) => el("div", { class: "warn" }, `⚠ ${w}`)),
 
-    html += `<h3>Regions</h3>`;
-    m.regions.forEach((r, i) => {
-      if (r.file_off < 0 || r.file_size <= 0) return;
-      html += `<div class="region-row" data-ri="${i}">` +
-        `<span class="rname" title="${esc(r.name)}">${esc(r.name)}</span>` +
-        `<span class="rperms">${r.perms || "–"}</span>` +
-        `<span class="rsize">${fmtSize(r.file_size)}</span></div>`;
-    });
-    this.el.innerHTML = html;
+      el("h3", {}, "Regions"),
+      ...m.regions.flatMap((r, i) =>
+        r.file_off < 0 || r.file_size <= 0 ? [] : [
+          el("div", { class: "region-row", "data-ri": i },
+             el("span", { class: "rname", title: r.name }, r.name),
+             span("rperms", r.perms || "–"),
+             span("rsize", fmtSize(r.file_size))),
+        ]));
 
     this.el.querySelectorAll<HTMLElement>(".region-row").forEach((row) => {
       row.addEventListener("click", () => {

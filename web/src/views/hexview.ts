@@ -10,7 +10,8 @@
    caret. */
 
 import { getBytes, type BinaryModel, type Region } from "../api.ts";
-import { esc } from "../escape.ts";
+import { html, joinHtml, rawHtml, setHtml, type SafeHtml } from "../dom.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import {
   fmtHex, offToVa, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -142,6 +143,7 @@ export class HexView {
         const oldest = this.pages.keys().next().value as number;
         this.pages.delete(oldest);
       }
+      clearPaneError(this.scroller);
       this.queueRender();
     } catch (e) {
       const status = (e as { status?: number }).status;
@@ -154,7 +156,8 @@ export class HexView {
         }, 700);
         return;                     // keep p in pending until the retry
       }
-      console.warn("hex page fetch failed:", e);
+      paneError(this.scroller, "could not load these bytes", e,
+                () => this.queueRender());
     } finally {
       if (id === this.id) this.pending.delete(p);
     }
@@ -182,7 +185,7 @@ export class HexView {
 
     const sel = this.store.state.offsetRange;
     const caret = this.store.state.caret;
-    const rows: string[] = [];
+    const rows: SafeHtml[] = [];
     let prevRegion: Region | null | undefined;
     let prevSym: SymLite | null | undefined;
     for (let row = first; row < last; row++) {
@@ -195,42 +198,49 @@ export class HexView {
       prevRegion = region;
       prevSym = symb;
     }
-    this.content.innerHTML = rows.join("");
+    setHtml(this.content, joinHtml(rows));
     this.renderAddr();
   }
 
+  /* This is the one view that keeps building markup rather than elements:
+     a screenful is ~50 rows × 34 spans, rebuilt on every scroll frame, and
+     parsing one string beats ~1,700 createElement calls. The `html` tag
+     keeps that fast path without keeping the unsafe one — region and symbol
+     names are escaped by construction, and `setHtml` will not accept a
+     string that did not come from it. */
   private renderRow(
     off: number, region: Region | null, symb: SymLite | null,
     regionChanged: boolean, symChanged: boolean,
     sel: { start: number; end: number } | null, caret: number | null,
-  ): string {
+  ): SafeHtml {
     const n = Math.min(ROW_BYTES, (this.model?.size ?? 0) - off);
-    const hexParts: string[] = [];
-    const asciiParts: string[] = [];
+    const hexParts: SafeHtml[] = [];
+    const asciiParts: SafeHtml[] = [];
     for (let i = 0; i < ROW_BYTES; i++) {
-      if (i >= n) { hexParts.push("  "); asciiParts.push(" "); continue; }
+      if (i >= n) {
+        hexParts.push(rawHtml("  "));
+        asciiParts.push(rawHtml(" "));
+        continue;
+      }
       const o = off + i;
       const b = this.byteAt(o);
       const hx = b === null ? "··" : b.toString(16).padStart(2, "0");
       const ch = b === null ? "·"
-        : b >= 0x20 && b < 0x7f ? esc(String.fromCharCode(b)) : "·";
+        : b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : "·";
       let cls = "";
       if (sel && o >= sel.start && o < sel.end) cls = "hl";
       if (o === caret) cls += (cls ? " " : "") + "caret";
-      const attr = cls ? ` class="${cls}"` : "";
-      hexParts.push(`<span data-o="${o}"${attr}>${hx}</span>`);
-      asciiParts.push(`<span data-o="${o}"${attr}>${ch}</span>`);
+      hexParts.push(html`<span data-o="${o}" class="${cls}">${hx}</span>`);
+      asciiParts.push(html`<span data-o="${o}" class="${cls}">${ch}</span>`);
     }
-    const g1 = hexParts.slice(0, 8).join(" ");
-    const g2 = hexParts.slice(8).join(" ");
-    const rlabel = regionChanged && region ? esc(region.name) : "";
-    const slabel = symChanged && symb ? esc(symb.name) : "";
-    return `<div class="hexrow">` +
-      `<span class="gr" title="${region ? esc(region.name) : ""}">${rlabel}</span>` +
-      `<span class="gs" title="${symb ? esc(symb.name) : ""}">${slabel}</span>` +
-      `<span class="addr">${off.toString(16).padStart(8, "0")}</span>` +
-      `  ${g1}  ${g2}  ` +
-      `<span class="ascii">${asciiParts.join("")}</span></div>`;
+    return html`<div class="hexrow">\
+<span class="gr" title="${region ? region.name : ""}">\
+${regionChanged && region ? region.name : ""}</span>\
+<span class="gs" title="${symb ? symb.name : ""}">\
+${symChanged && symb ? symb.name : ""}</span>\
+<span class="addr">${off.toString(16).padStart(8, "0")}</span>\
+  ${joinHtml(hexParts.slice(0, 8), " ")}  ${joinHtml(hexParts.slice(8), " ")}  \
+<span class="ascii">${joinHtml(asciiParts)}</span></div>`;
   }
 
   private renderAddr(): void {

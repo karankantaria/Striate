@@ -11,7 +11,8 @@
 
 import { getSignal, type BinaryModel, type Region, type SignalBand, type SignalInfo } from "../api.ts";
 import { LOCATE_RGB, SERIES, type Theme } from "../colormap.ts";
-import { esc } from "../escape.ts";
+import { html, joinHtml, replace, type SafeHtml } from "../dom.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
 import { hideTooltip, showTooltip } from "../tooltip.ts";
 
@@ -129,7 +130,7 @@ export class PlotView {
 
   private renderPicks(): void {
     if (!this.picksEl) return;
-    this.picksEl.innerHTML = "";
+    replace(this.picksEl);
     for (const lane of this.lanes) {
       const label = document.createElement("label");
       const cb = document.createElement("input");
@@ -170,8 +171,10 @@ export class PlotView {
       if (seq !== this.fetchSeq) return;
       enabled.forEach((l, i) => { l.band = bands[i]; });
       this.x0 = r.start; this.x1 = r.end;
+      clearPaneError(this.host);
     } catch (e) {
-      console.warn("signal fetch failed:", e);
+      paneError(this.host, "could not load signals", e,
+                () => this.refetch());
       return;
     }
     this.draw();
@@ -388,21 +391,21 @@ export class PlotView {
   }
 
   private tooltip(clientX: number, clientY: number, off: number): void {
-    const rows = [`<b>${fmtHex(off)}</b>`];
+    const rows: SafeHtml[] = [html`<b>${fmtHex(off)}</b>`];
     const region = this.model?.regions.find((r) =>
       r.file_off >= 0 && off >= r.file_off && off < r.file_off + r.file_size);
-    if (region) rows.push(`<span class="t2">${esc(region.name)} (${region.kind})</span>`);
+    if (region) {
+      rows.push(html`<span class="t2">${region.name} (${region.kind})</span>`);
+    }
     for (const lane of this.lanes) {
       if (!lane.enabled || !lane.band) continue;
       const b = lane.band;
       const n = b.mean.length;
       const i = Math.max(0, Math.min(n - 1,
         Math.floor(((off - this.x0) / (this.x1 - this.x0)) * n)));
-      rows.push(
-        `<span class="t2">${lane.info.name}:</span> ${fmtSig(b.mean[i])}` +
-        ` <span class="t2">(${fmtSig(b.min[i])}–${fmtSig(b.max[i])})</span>`);
+      rows.push(html`<span class="t2">${lane.info.name}:</span> ${fmtSig(b.mean[i])} <span class="t2">(${fmtSig(b.min[i])}–${fmtSig(b.max[i])})</span>`);
     }
-    showTooltip(clientX, clientY, rows.join("<br>"));
+    showTooltip(clientX, clientY, joinHtml(rows, "<br>"));
   }
 }
 

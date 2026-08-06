@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import cache as cache_mod
@@ -74,6 +74,33 @@ DEFAULT_ORIGINS = (
 #: same-origin and CORS stops applying entirely. Checking Host is what
 #: catches that, because the Host header still says `evil.com`.
 DEFAULT_HOSTS = ("127.0.0.1", "localhost")
+
+#: CSP for the packaged UI, sent as a real header. index.html also carries a
+#: meta tag — the two intersect, so this can be stricter, and it is: there is
+#: no Vite dev server here, so `connect-src` needs no websocket, and
+#: `frame-ancestors` only works as a header (a meta tag silently ignores it).
+UI_CSP = "; ".join((
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+))
+
+
+def ui_root() -> Path | None:
+    """The packaged frontend, or None in a source checkout that has no build.
+
+    `web/dist` lives outside the Python package, so a wheel only contains a
+    UI if `tools/build_ui.py` staged it here first (§4.1).
+    """
+    d = Path(__file__).resolve().parent / "webui"
+    return d if (d / "index.html").is_file() else None
 
 
 def _extract_token(request: Request) -> str | None:
@@ -821,6 +848,41 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
         require(cache, "triage")
         return Response(cache.read_bytes("triage.json"),
                         media_type="application/json")
+
+    # ---------------------------------------------------------- the UI
+    #
+    # Mounted LAST so every /api route above matches first. Serving the
+    # frontend from the API's own origin is what makes the packaged app work
+    # at all (§4.1) and incidentally removes the cross-origin case entirely:
+    # there is no CORS request left to authorise.
+    #
+    # Deliberately NOT behind the token: you have to be able to load the page
+    # before you can supply a token. Nothing here is secret — it is the same
+    # static bundle every install ships.
+    ui = ui_root()
+    app.state.ui_root = ui
+
+    if ui is not None:
+        @app.get("/{ui_path:path}", include_in_schema=False)
+        def serve_ui(ui_path: str):
+            # An unmatched /api/* path is a genuine API 404. Answering it
+            # with index.html would hand a JSON client a page of HTML and
+            # turn a clear 404 into a confusing parse error.
+            if ui_path == "api" or ui_path.startswith("api/"):
+                raise HTTPException(404, f"no such API route: /{ui_path}")
+
+            target = ui / "index.html"
+            if ui_path:
+                candidate = Path(os.path.realpath(ui / ui_path))
+                # confine: `..` in the URL path must not escape the bundle
+                if _within(str(candidate), str(ui)) and candidate.is_file():
+                    target = candidate
+            # everything else falls back to index.html so client-side
+            # routing (/login, RELEASE.md §2) works on a hard refresh
+            return FileResponse(target, headers={
+                "Content-Security-Policy": UI_CSP,
+                "X-Content-Type-Options": "nosniff",
+            })
 
     return app
 

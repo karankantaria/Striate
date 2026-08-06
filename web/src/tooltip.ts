@@ -1,4 +1,10 @@
-/* Singleton hover tooltip (the #tooltip div in index.html). */
+/* Singleton hover tooltip (the #tooltip div in index.html).
+
+   Content is SafeHtml, not string: tooltips quote section and symbol names
+   straight out of the binary, so the type is what stops an unescaped one
+   getting here. Build it with the `html` tag from dom.ts. */
+
+import { setHtml, type SafeHtml } from "./dom.ts";
 
 let el: HTMLElement | null = null;
 
@@ -7,9 +13,10 @@ function tip(): HTMLElement {
   return el;
 }
 
-export function showTooltip(clientX: number, clientY: number, html: string): void {
+export function showTooltip(clientX: number, clientY: number,
+                            content: SafeHtml): void {
   const t = tip();
-  t.innerHTML = html;
+  setHtml(t, content);
   t.hidden = false;
   const pad = 14;
   const w = t.offsetWidth, h = t.offsetHeight;

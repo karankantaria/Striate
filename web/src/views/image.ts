@@ -12,7 +12,8 @@ import {
   getStrideSuggestions, getSurfaceRgb,
   type BinaryModel, type StrideCandidate, type SurfaceMeta,
 } from "../api.ts";
-import { esc } from "../escape.ts";
+import { html, joinHtml, type SafeHtml } from "../dom.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import {
   fmtHex, offToVa, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -186,13 +187,15 @@ export class ImageView {
       this.bitmap = bitmap;
       this.meta = meta;
       this.start = start;
+      clearPaneError(this.host);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 409 || status === 410) {
         window.clearTimeout(this.refetchTimer);
         this.refetchTimer = window.setTimeout(() => this.refetch(), 700);
       } else {
-        console.warn("image fetch failed:", e);
+        paneError(this.host, "could not render this image", e,
+                  () => this.refetch());
       }
       return;
     }
@@ -281,12 +284,12 @@ export class ImageView {
   private hover(e: PointerEvent): void {
     const off = this.offsetAt(e.clientX, e.clientY);
     if (off === null || !this.model) { hideTooltip(); return; }
-    const rows = [`<b>${fmtHex(off)}</b>`];
+    const rows: SafeHtml[] = [html`<b>${fmtHex(off)}</b>`];
     const va = offToVa(this.model.mappings, off);
-    if (va !== null) rows.push(`<span class="t2">VA</span> ${fmtHex(va)}`);
+    if (va !== null) rows.push(html`<span class="t2">VA</span> ${fmtHex(va)}`);
     const region = regionAtOff(this.model.regions, off);
-    if (region) rows.push(`<span class="t2">${esc(region.name)}</span>`);
-    showTooltip(e.clientX, e.clientY, rows.join("<br>"));
+    if (region) rows.push(html`<span class="t2">${region.name}</span>`);
+    showTooltip(e.clientX, e.clientY, joinHtml(rows, "<br>"));
   }
 }
 

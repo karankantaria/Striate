@@ -13,6 +13,7 @@
 
 import { getHist3, type BinaryModel, type Hist3Meta } from "../api.ts";
 import type { Theme } from "../colormap.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import type { OffsetRange, SelectionStore } from "../store.ts";
 
 const MAX_PTS = 1_000_000;        // GPU upload cap; server order keeps densest
@@ -317,11 +318,13 @@ export class Hist3DView {
         window.clearTimeout(this.refetchTimer);
         this.refetchTimer = window.setTimeout(() => this.refetch(), 700);
       } else {
-        console.warn("hist3 fetch failed:", e);
+        paneError(this.host, "could not load the trigram", e,
+                  () => this.refetch());
       }
       return;
     }
     if (seq !== this.fetchSeq) return;
+    clearPaneError(this.host);
     this.nPts = pts.length / 4;
     // computed subrange responses are key-ordered unless capped — scan
     let max = 0;

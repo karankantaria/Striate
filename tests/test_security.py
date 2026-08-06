@@ -761,3 +761,115 @@ def test_server_sweeps_after_analysis(tmp_path):
 
     assert not stale.exists(), "stale entry survived the post-analysis sweep"
     assert (cache_root / sha).exists(), "the just-analysed entry was evicted"
+
+
+# ------------------------------------------- §4.1: the packaged UI mount
+
+@pytest.fixture
+def ui_client(tmp_path):
+    """A client for an app that is serving the staged frontend."""
+    from binviz.service import ui_root
+
+    if ui_root() is None:
+        pytest.skip("frontend not staged — run `python tools/build_ui.py`")
+    with authed_client(make_app(tmp_path / "cache")) as c:
+        yield c
+
+
+def test_ui_is_served_at_the_root(ui_client):
+    r = ui_client.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "<title>binviz</title>" in r.text
+
+
+def test_ui_does_not_require_a_token(tmp_path):
+    """You have to be able to load the page before you can supply a token.
+
+    Nothing in the bundle is secret — it is the same static output every
+    install ships — so gating it would only make the tool unusable.
+    """
+    from fastapi.testclient import TestClient
+    from binviz.service import ui_root
+
+    if ui_root() is None:
+        pytest.skip("frontend not staged")
+    app = make_app(tmp_path / "cache")
+    with TestClient(app, base_url="http://127.0.0.1") as anon:
+        assert anon.get("/").status_code == 200
+        # ...but the API behind it still does
+        assert anon.get("/api/files?dir=.").status_code == 401
+
+
+def test_unknown_paths_fall_back_to_index(ui_client):
+    """Client-side routing (/login, RELEASE.md §2) must survive a refresh."""
+    r = ui_client.get("/login")
+    assert r.status_code == 200
+    assert "<title>binviz</title>" in r.text
+
+
+def test_unmatched_api_path_is_a_json_404(ui_client):
+    """The catch-all must not swallow API 404s.
+
+    Returning index.html here would hand a JSON client a page of HTML and
+    turn a clear 404 into a confusing parse error somewhere else entirely.
+    """
+    r = ui_client.get("/api/bogus")
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+    assert "no such API route" in r.json()["detail"]
+
+
+def test_api_routes_still_win_over_the_catch_all(ui_client, tmp_path):
+    """Mount order: /api must be matched before the SPA fallback."""
+    r = ui_client.get(f"/api/files?dir={tmp_path}")
+    assert r.status_code == 200
+    assert "files" in r.json()
+
+
+@pytest.mark.parametrize("path", [
+    "/../pyproject.toml",
+    "/%2e%2e/pyproject.toml",
+    "/assets/../../pyproject.toml",
+    "/....//pyproject.toml",
+])
+def test_ui_paths_cannot_escape_the_bundle(ui_client, path):
+    """The catch-all takes a raw path from the URL, so it gets the same
+    realpath-first confinement as /api/open."""
+    r = ui_client.get(path)
+    assert "build-system" not in r.text, f"{path} leaked a file outside webui"
+
+
+def test_ui_responses_carry_a_strict_csp(ui_client):
+    """A real header, not just the meta tag: frame-ancestors only works here."""
+    csp = ui_client.get("/").headers.get("content-security-policy", "")
+    assert "script-src 'self'" in csp
+    assert "unsafe-inline" not in csp.split("style-src")[0], \
+        "script-src must not allow inline"
+    assert "frame-ancestors 'none'" in csp
+    assert ui_client.get("/").headers.get("x-content-type-options") == "nosniff"
+
+
+def test_assets_are_served(ui_client):
+    """The index references hashed asset URLs; they must resolve."""
+    import re
+
+    html = ui_client.get("/").text
+    refs = re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)
+    assert refs, "index.html referenced no /assets/* files"
+    for ref in refs:
+        r = ui_client.get(ref)
+        assert r.status_code == 200, f"{ref} -> {r.status_code}"
+
+
+def test_app_without_a_staged_ui_still_serves_the_api(tmp_path, monkeypatch):
+    """A source checkout that never ran the build must still work — the
+    mount is conditional, not required."""
+    import binviz.service as svc
+
+    monkeypatch.setattr(svc, "ui_root", lambda: None)
+    app = svc.create_app(tmp_path / "cache", file_root=None)
+    assert app.state.ui_root is None
+    with authed_client(app) as c:
+        assert c.get(f"/api/files?dir={tmp_path}").status_code == 200
+        assert c.get("/").status_code == 404      # no UI, no catch-all

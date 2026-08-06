@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 dist/
+build/
 node_modules/
 
 # generated corpus samples and downloaded tools — rebuild with corpus/build.py
@@ -11,3 +12,7 @@ corpus/tools/
 
 # local Claude Code session state (worktrees would commit as broken gitlinks)
 .claude/
+
+# the built frontend, staged into the package by tools/build_ui.py before a
+# wheel is built — generated output, rebuilt from web/ on demand
+src/binviz/webui/

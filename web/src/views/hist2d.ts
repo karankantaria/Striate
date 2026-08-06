@@ -17,7 +17,8 @@ import {
   type BinaryModel, type Hist2Meta, type QuantiseMeta,
 } from "../api.ts";
 import { applyLut, VIRIDIS, type Theme } from "../colormap.ts";
-import { esc } from "../escape.ts";
+import { html, joinHtml, rawHtml, type SafeHtml } from "../dom.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
 import { toDisplay, type DisplayMode } from "../transforms.ts";
 import { hideTooltip, showTooltip } from "../tooltip.ts";
@@ -142,13 +143,15 @@ export class Hist2DView {
       if (seq !== this.fetchSeq) return;
       this.counts = counts;
       this.meta = meta;
+      clearPaneError(this.host);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 409 || status === 410) {
         window.clearTimeout(this.refetchTimer);
         this.refetchTimer = window.setTimeout(() => this.refetch(), 700);
       } else {
-        console.warn("hist2 fetch failed:", e);
+        paneError(this.host, "could not load the bigram", e,
+                  () => this.refetch());
       }
       return;
     }
@@ -185,7 +188,8 @@ export class Hist2DView {
       });
       this.renderStatus();
     } catch (e) {
-      console.warn("locate failed:", e);
+      paneError(this.host, "brush-to-locate failed", e,
+                () => this.locate());
     }
   }
 
@@ -295,16 +299,16 @@ export class Hist2DView {
     if (!this.counts) return;
     const count = this.counts[c.x * 256 + c.y];
     const q = this.meta?.quantise as QuantiseMeta | undefined;
-    const rows: string[] = [];
+    const rows: SafeHtml[] = [];
     if (!q || q.method === "identity") {
-      rows.push(`<b>${fmtHex(c.x)} → ${fmtHex(c.y)}</b>` +
-        `${printable(c.x)}${printable(c.y)}`);
+      rows.push(html`<b>${fmtHex(c.x)} → ${fmtHex(c.y)}</b>\
+${printable(c.x)}${printable(c.y)}`);
     } else {
-      rows.push(`<b>bin ${fmtHex(c.x)} → bin ${fmtHex(c.y)}</b>`);
-      rows.push(`<span class="t2">${binRange(c.x, q)} → ${binRange(c.y, q)}</span>`);
+      rows.push(html`<b>bin ${fmtHex(c.x)} → bin ${fmtHex(c.y)}</b>`);
+      rows.push(html`<span class="t2">${binRange(c.x, q)} → ${binRange(c.y, q)}</span>`);
     }
-    rows.push(`<span class="t2">count</span> ${count.toLocaleString()}`);
-    showTooltip(clientX, clientY, rows.join("<br>"));
+    rows.push(html`<span class="t2">count</span> ${count.toLocaleString()}`);
+    showTooltip(clientX, clientY, joinHtml(rows, "<br>"));
   }
 
   private renderStatus(): void {
@@ -331,9 +335,10 @@ export class Hist2DView {
   }
 }
 
-function printable(v: number): string {
+function printable(v: number): SafeHtml {
   return v >= 0x20 && v < 0x7f
-    ? ` <span class="t2">'${esc(String.fromCharCode(v))}'</span>` : "";
+    ? html` <span class="t2">'${String.fromCharCode(v)}'</span>`
+    : rawHtml("");
 }
 
 function binRange(bin: number, q: QuantiseMeta): string {

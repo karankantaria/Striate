@@ -15,8 +15,9 @@ import {
   BYTE_CLASS_COLORS, BYTE_CLASS_NAMES, byteClassLut, GRAY, LOCATE_RGB,
   VIRIDIS, type Lut, type Theme,
 } from "../colormap.ts";
-import { esc } from "../escape.ts";
+import { html, joinHtml, replace, span, type SafeHtml } from "../dom.ts";
 import { d2xy, offsetAtXY } from "../hilbert.ts";
+import { clearPaneError, paneError } from "../panestatus.ts";
 import {
   fmtHex, offToVa, regionAtOff,
   type OffsetRange, type SelectionStore,
@@ -131,11 +132,13 @@ export class OverallView {
         window.clearTimeout(this.refetchTimer);
         this.refetchTimer = window.setTimeout(() => this.refetch(), 700);
       } else {
-        console.warn("surface fetch failed:", e);
+        paneError(this.view.host, "could not render this surface", e,
+                  () => this.refetch());
       }
       return;
     }
     if (seq !== this.fetchSeq) return;   // superseded
+    clearPaneError(this.view.host);
     const m = raster.meta.meta as Record<string, unknown>;
     this.start = (m.start as number) ?? r.start;
     this.end = (m.end as number) ?? r.end;
@@ -254,14 +257,16 @@ export class OverallView {
     if (!this.model) return;
     const va = offToVa(this.model.mappings, off);
     const region = regionAtOff(this.model.regions, off);
-    const lines = [
-      `<b>${fmtHex(off)}</b>` + (va !== null ? ` · VA ${fmtHex(va)}` : " · unmapped"),
-      region ? `<span class="t2">${esc(region.name)} (${region.kind}, ${region.perms || "–"})</span>` : "",
-      this.sigMeta
-        ? `<span class="t2">${this.sigMeta.lo}–${this.sigMeta.hi} ${esc(this.sigMeta.unit)}</span>`
-        : "",
-    ].filter(Boolean);
-    showTooltip(ev.clientX, ev.clientY, lines.join("<br>"));
+    const lines: SafeHtml[] = [
+      html`<b>${fmtHex(off)}</b>${va !== null ? ` · VA ${fmtHex(va)}` : " · unmapped"}`,
+    ];
+    if (region) {
+      lines.push(html`<span class="t2">${region.name} (${region.kind}, ${region.perms || "–"})</span>`);
+    }
+    if (this.sigMeta) {
+      lines.push(html`<span class="t2">${this.sigMeta.lo}–${this.sigMeta.hi} ${this.sigMeta.unit}</span>`);
+    }
+    showTooltip(ev.clientX, ev.clientY, joinHtml(lines, "<br>"));
   }
 
   /* ------------------------------------------------------- overlay */
@@ -398,10 +403,10 @@ export class OverallView {
         return key;
       }));
     } else if (this.mode === "signal") {
-      this.legendEl.innerHTML =
-        `<span class="key">entropy 0–8 bits/byte, window 4 KiB, max per pixel (viridis)</span>`;
+      replace(this.legendEl, span("key",
+        "entropy 0–8 bits/byte, window 4 KiB, max per pixel (viridis)"));
     } else {
-      this.legendEl.innerHTML = `<span class="key">byte value 0x00–0xFF (grey)</span>`;
+      replace(this.legendEl, span("key", "byte value 0x00–0xFF (grey)"));
     }
   }
 }

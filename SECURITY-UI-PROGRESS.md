@@ -15,11 +15,11 @@ are not mine to do (see "Blocked" below). Security items first.
 
 | Item | What | State |
 |---|---|---|
-| §0.1 | Merge `worktree-branding-release-docs` into `main` | ⛔ blocked — needs a human commit |
-| §0.2 | Delete untracked `icons temp/` | ⛔ blocked — depends on §0.1 |
-| §0.3 | `.gitignore` written as UTF-16LE, matches nothing | ⬜ not started |
-| §0.4 | Phantom gitlink `.claude/worktrees/phase12-scale` | ⛔ blocked — needs `git rm --cached` |
-| §4.1 | Static mount + package data (wheel ships no UI) | ⬜ not started |
+| §0.1 | Merge `worktree-branding-release-docs` into `main` | ✅ already done (verified) |
+| §0.2 | Delete untracked `icons temp/` | ✅ already done (absent) |
+| §0.3 | `.gitignore` written as UTF-16LE, matches nothing | ✅ already done (verified) |
+| §0.4 | Phantom gitlink `.claude/worktrees/phase12-scale` | ✅ already done (untracked) |
+| **§4.1** | **Static mount + package data (wheel ships no UI)** | ✅ **done** |
 | **S2** | **XSS from binary metadata + CSP** | ✅ **done** |
 | **S1a** | **Startup auth token on every `/api` route** | ✅ **done** |
 | **S1b** | **`Host` allowlist (anti-DNS-rebinding)** | ✅ **done** |
@@ -30,33 +30,43 @@ are not mine to do (see "Blocked" below). Security items first.
 | **S5** | **Uploads have no size cap** | ✅ **done** |
 | **S6** | **Cache grows without bound** | ✅ **done** |
 | **S7** | **Unbounded analysis concurrency** | ✅ **done** |
-| §3.x | UI work (error helper, picker, nav, a11y) | ⬜ not started |
+| **§3.3** | **Eight silent failure paths** | ✅ **done** |
+| **§3.5** | **One escaper + stop hand-building HTML** | ✅ **done** |
+| §3.x | Remaining UI work (picker, first-run, nav, a11y) | ⬜ not started |
 | §2.x | Optional login mode | ⬜ not started |
 | §4.2–4.5 | Pins, LICENSE, Trusted Publishing | ⬜ not started (SECURITY.md ✅, that was §4.4) |
 
-Test baseline after S6: **371 backend** (was 316), **45 frontend** (was 37),
-`npm run build` clean. **All of §1 (S1–S7) is now closed.**
+Test baseline after §3.5: **383 backend** (was 316), **62 frontend** (was 37),
+`npm run build` clean. **All of §1 (S1–S7), §4.1, §3.3 and §3.5 are closed** —
+i.e. every security finding and both structural UI items.
+
+> **Building a wheel now has a required first step:**
+> ```sh
+> python tools/build_ui.py     # stages web/dist -> src/binviz/webui/
+> pip wheel . --no-deps -w dist
+> ```
+> Skip it and the wheel silently ships no UI again — which is exactly the
+> bug §4.1 was about. `src/binviz/webui/` is generated and gitignored.
 
 > **Running the app changed.** The API now needs a token and confines file
 > access to `--root`. `HANDOVER.md` "How to run" has the two-process recipe;
 > the short version is `export BINVIZ_TOKEN=…` and pass `--token "$BINVIZ_TOKEN"`
 > to `binviz serve`, because the Vite proxy reads the same variable.
 
-## Blocked on the repo owner
+## §0 is already resolved — the work order is stale there
 
-The user commits manually and does not want git history touched, so §0.1,
-§0.2 and §0.4 need them. They are worth doing early — the work order is right
-that everything else assumes one branch. The exact commands:
+Re-checked on 2026-08-06 and **all four §0 items were already done**, so
+nothing is blocked on the repo owner any more:
 
-```sh
-git merge origin/worktree-branding-release-docs   # §0.1
-git rm --cached .claude/worktrees/phase12-scale   # §0.4 — do §0.3 first
-rm -rf "icons temp"                               # §0.2, after §0.1
-```
+- `packaging/icons/` is on `main`, so the branding branch was merged (§0.1).
+- `icons temp/` is gone (§0.2).
+- `.gitignore` is clean UTF-8 and `git check-ignore -v .claude/` confirms
+  `.claude/` **is** ignored — the UTF-16LE null bytes are not there (§0.3).
+- `git ls-files -s .claude/worktrees/phase12-scale` returns nothing, so the
+  phantom gitlink is untracked, and there is no `.gitmodules` (§0.4).
 
-§0.3 (`.gitignore` encoding) is a file edit, not a git operation, so it is
-not blocked — it is just not done yet. Do it *before* §0.4 or the phantom
-gitlink comes straight back.
+Verify with the commands in the work order's appendix if you doubt it. The
+point is that a fresh session should not spend time re-fixing these.
 
 ## Done
 
@@ -315,6 +325,150 @@ Checked against the real cache on this machine: 17 entries, 534 MB, i.e.
 Also switched the startup hook from `@app.on_event` to the lifespan API — the
 former is deprecated and adding it took the suite from 1 warning to 105.
 
+### §4.1 — the wheel now ships a UI ✅
+
+**Fixed 2026-08-06.** This was the release blocker: `pip install binviz`
+produced a backend with no frontend, because `web/dist` sits outside
+`src/binviz/` where setuptools cannot see it.
+
+- **`tools/build_ui.py`** runs the Vite build and stages `web/dist` into
+  `src/binviz/webui/`, dropping `.map` files (~600 KB of dev-only weight;
+  `--with-sourcemaps` keeps them). `--skip-build` stages an existing dist.
+- **`pyproject.toml`** declares `binviz = ["webui/*", "webui/assets/*"]` as
+  package data.
+- **`service.py`** mounts the bundle **after** every `/api` route, so the API
+  always wins, with an SPA fallback to `index.html` for unknown paths (which
+  `/login` will need on a hard refresh, per `RELEASE.md` §2).
+- `src/binviz/webui/` is generated output and is **gitignored**.
+
+Three decisions in the mount worth keeping:
+
+1. **The UI is not behind the token.** You have to load the page before you
+   can supply a token, and nothing in the bundle is secret — it is the same
+   static output every install ships. The API behind it is still gated; a
+   test asserts exactly that pair (`/` is 200 anonymously, `/api/files` is
+   401).
+2. **An unmatched `/api/*` path stays a JSON 404** rather than falling
+   through to `index.html`. Serving HTML there would hand a JSON client a
+   page of markup and turn a clear 404 into a confusing parse error
+   somewhere else entirely.
+3. **The catch-all takes a raw path from the URL**, so it gets the same
+   realpath-first confinement as `/api/open`. Four traversal shapes are
+   tested (`..`, `%2e%2e`, `..%2f`, `....//`); all fall back to index.html
+   and none leak.
+
+The packaged build also now sends a **real CSP header**, which is stricter
+than the meta tag it intersects with: no websocket in `connect-src` (there is
+no Vite here) and `frame-ancestors 'none'`, which a meta tag silently
+ignores. Plus `X-Content-Type-Options: nosniff`.
+
+**Verified the acceptance criterion properly** — built a wheel, installed it
+into a clean venv, and ran it from there: the wheel contains all six UI files,
+`/` serves the real page, every referenced asset resolves, and a full
+open → analyse → `state: complete` (all six artifacts ready) → surface render
+round-trip works. Offline holds too: the bundle references `eclipse.org` and
+`w3.org` only as XML namespace identifiers, and contains **zero** occurrences
+of `fetch(`, `XMLHttpRequest`, `importScripts`, `WebSocket` or `sendBeacon`.
+
+### §3.3 — eight silent failure paths ✅
+
+**Fixed 2026-08-06.** Every view swallowed fetch errors into `console.warn`,
+so a failed pane sat blank or, worse, kept showing the *previous* file's
+data. New `web/src/panestatus.ts` exports `paneError` / `clearPaneError` /
+`errorText`; all eight sites report, and each success path clears.
+
+The 409/410 "analysis still settling" retry paths were left alone on purpose
+— that is an expected transient, not a failure, and shouting about it would
+train people to ignore the banner.
+
+Styling is deliberate: the message is **overlaid at the bottom of the pane
+rather than replacing the content**, so whatever was drawn before stays
+visible behind it. "This is stale and here is why" beats a blank box.
+
+> **The bit that only showed up by running it.** After wiring all eight, I
+> killed the server mid-session and clicked: five panes recovered on the next
+> interaction and **Overall did not** — it is file-bound, so it only refetches
+> on a resize or a mode change, and nothing the user was likely to do would
+> ever retry it. A permanent error banner with no way out is its own dead
+> end. So `paneError` now takes an optional `retry` callback and every site
+> passes one; the affordance is a real `<button>` (focusable, keyboard
+> reachable — the mistake §3.6 catalogues elsewhere), not a clickable `<div>`.
+> A test asserts no `paneError` call is missing its retry.
+
+**Verified in a real browser**, not just in tests: served the packaged UI,
+opened `hello_O2`, killed the server, dragged a selection → **seven** panes
+(Zoomed, Signals, Hex, Bigram, Trigram, Image, Dot plot) each showed its
+message plus a retry button. Restarted the server, clicked all seven retries
+→ every pane recovered and repopulated for the selection. That round trip
+also incidentally confirmed S1a end to end: the page was opened with
+`?token=…` and the address bar afterwards read only `?path=…`, i.e. `auth.ts`
+captured the token and stripped it.
+
+Tests are the DOM-free kind this project uses (no jsdom — the dependency list
+is deliberately short). What is pinned: `errorText` behaviour, that **no view
+contains `console.warn/error/log`** at all, that every fetching view imports
+and uses both `paneError` and `clearPaneError`, that no `paneError` call
+lacks a retry, and that the module never touches `innerHTML` (the message
+carries a server-supplied detail, which can quote a hostile file's own
+strings — same reasoning as `escape.ts`).
+
+### §3.5 — stop hand-building HTML ✅
+
+**Fixed 2026-08-06.** S2 gave every view one correct escaper; this makes the
+*safe* path the default, so a forgotten `esc()` stops being expressible.
+
+New `web/src/dom.ts`, deliberately tiny — not a framework:
+
+- `el()` / `replace()` / `span()` build nodes. Text goes through
+  `textContent`, so an interpolated value cannot be markup no matter what
+  the binary contained.
+- ``html`…` `` is a tagged template that escapes every `${…}` and returns
+  `SafeHtml`. `setHtml` and `showTooltip` accept **only** `SafeHtml`, so a
+  plain string will not type-check where markup is expected.
+
+Migrated: the three list builders that carry attacker-controlled strings
+(`info.ts` regions, `triage.ts` findings, `cfg.ts` function list) to nodes;
+all seven tooltips and the hex viewer to ``html`…` ``; the legend, signal
+picks and recent-files datalist to nodes.
+
+**`innerHTML` now appears exactly once in the codebase** — inside `setHtml` —
+and a test enforces that. `esc` likewise has exactly one caller, the `html`
+tag, which is also tested: a second entity table is precisely how S2
+happened.
+
+Three things worth keeping:
+
+1. **`SafeHtml` is a wrapper object, not a branded string.** The brand would
+   be compile-time only, and `html` has to decide *at runtime* whether a
+   value is an already-escaped fragment (splice verbatim) or ordinary text
+   (escape). A branded string is still a string at runtime, so nested
+   fragments would silently double-escape. There is a test for that.
+2. **The hex viewer deliberately keeps markup.** A screenful is ~50 rows ×
+   34 spans rebuilt every scroll frame; parsing one string beats ~1,700
+   `createElement` calls. It uses ``html`…` ``, so it keeps the fast path
+   without keeping the unsafe one.
+3. **No parameter properties in `src/`.** `constructor(readonly value: string)`
+   compiles fine under Vite but `node --test` runs in strip-only mode and
+   rejects it outright — the app built cleanly and only the tests caught it.
+   Write the field out.
+
+I also dropped an over-clever guard that tried to regex for "template literal
+containing a tag": it flagged `querySelectorAll<HTMLElement>` and every other
+generic. A guard with false positives gets deleted by whoever hits it next,
+so the tests pin the two facts that are actually true and checkable
+(`innerHTML` in one place, `esc` with one caller) and leave the rest to the
+compiler.
+
+**Verified in a real browser**, since this touched every rendering path:
+region list, triage findings, CFG function list, hex rows and gutter,
+tooltips, legend chips all render; clicking a triage finding still drives the
+selection (Zoomed followed to `0x22fd–0x2b00`); zero console output.
+
+A nice accident of the corpus: `hello_O2`'s first region is named
+**`<header>`** — a name that *is* an HTML tag. It renders as visible text in
+both the node-built region list and the ``html``-tagged hex gutter, which is
+the escaping proving itself on real data rather than on a synthetic payload.
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -330,32 +484,50 @@ steps for the open findings.
 
 ## Next up
 
-**§1 is done.** Every numbered security finding (S1–S7) is closed, tested,
-and — for S1 through S5 — verified against a running server rather than only
-in tests.
+**§0, §1 and §4.1 are all done.** Every numbered security finding is closed
+and tested, and most were re-verified against a running server rather than
+only in the suite.
 
-The work order's §5 order puts **§4.1** next: static mount + package data.
-It is a genuine release blocker (`pip install binviz` currently gets a
-backend with no frontend at all) and it simplifies S1c, since a frontend
-served from the API's own origin makes the cross-origin case disappear. It is
-also the prerequisite for injecting the token into the served HTML, which is
-what `RELEASE.md` §2's `none` auth mode needs.
+**Both structural items are done**, so new screens can now be added without
+inheriting the old habits: they get visible errors from `panestatus.ts` and
+safe rendering from `dom.ts` for free.
 
-Then the UI work in §3, where §3.3 (one shared `paneError` helper) and §3.5
-(stop hand-building HTML) should land **before** new screens, not after.
+What is left of the work order, in its own order:
 
-Still blocked on the repo owner: the three §0 git items at the top of this
-file.
+- **§3.1 — file picker.** The highest-value remaining item; today the only
+  way in is pasting an absolute path. **Read the platform note carefully:**
+  browser and desktop must behave *differently* (`<input type="file">`
+  deliberately hides the real path, so the browser must route through the
+  upload endpoint, while pywebview's dialog returns real paths and should
+  use the path endpoint). Getting that wrong is the likely failure mode.
+- **§3.2** first-run state, **§3.4** navigation (ten panes render at once
+  today), **§3.6** accessibility — the last two as part of the new screens.
+- **§2.2/§2.5** optional login mode. `§4.1` unblocked the `none` mode: with
+  same-origin serving the server can inject the token into the served HTML,
+  making the desktop app one-click while staying authenticated on the wire.
+- **§4.2/§4.3/§4.5** loosen the `==` dependency pins, add the MIT LICENSE
+  text (`pyproject.toml` declares MIT but no file exists), Trusted Publishing.
 
-Two things worth deciding before a release:
+Worth knowing before §3.1: the image view already clamps `width` to ≥1
+client-side, which is why a bad width never reaches the server. That is fine,
+but it means UI-level validation and the server-side 400s (S3) are
+independent — do not assume testing one covers the other. I found it by
+trying to trigger a pane error with `width=0` and getting a perfectly
+successful render.
 
-- `SECURITY-UI-WORKORDER.md` contains verified reproduction detail and sits
-  in a repo with a public remote. All the findings are fixed now, so this is
-  much less pressing than it was, but it is still a deliberate choice rather
-  than an accident.
-- `README.md` still says "Phase 3 complete" while `HANDOVER.md` says Phase 12.
-  Left alone because project status is the owner's call, but it is the first
-  thing a visitor reads.
+Now genuinely unblocked by §4.1: **§2.2's `none` auth mode** — with
+same-origin serving, the server can inject the token into the served HTML and
+the desktop app becomes one-click while staying authenticated on the wire.
+That is a small change now and the natural companion to the login screen.
+
+Still true: **do not add a pywebview `js_api` bridge** until §2.4's checklist
+is satisfied. S2 and the CSP were the preconditions and both are done, but
+the rest of that section (minimal bridge surface, `debug=False` in release,
+same-origin serving — that last one is now satisfied) still applies.
+
+One thing left for the owner: `README.md` says "Phase 3 complete" while
+`HANDOVER.md` says Phase 12. Project status is your call, but it is the first
+thing a visitor to a public repo reads.
 
 After the security items, the work order's order puts **§4.1** (static mount
 + package data) next — it is a genuine release blocker, since the wheel

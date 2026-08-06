@@ -141,6 +141,10 @@ select {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+  /* anchor for .pane-error in views whose host is not itself positioned
+     (the hex scroller): pinning to the pane keeps the message in place
+     instead of letting it scroll away with the content */
+  position: relative;
 }
 .pane-head {
   display: flex; align-items: center; gap: 8px;
@@ -155,6 +159,33 @@ select {
 .canvas-host canvas { position: absolute; left: 0; top: 0; }
 .range-label { font-size: 12px; font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
+
+/* A pane that could not load — see panestatus.ts. Overlaid rather than
+   replacing the content, so whatever was drawn before stays visible behind
+   it: "this is stale and here is why" beats a blank box. */
+.pane-error {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  z-index: 2;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--surface-1);
+  border-top: 1px solid var(--accent);
+  overflow-wrap: anywhere;
+}
+.pane-error[hidden] { display: none; }
+.pane-error-retry {
+  margin-left: 8px;
+  padding: 1px 8px;
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.pane-error-retry:hover { background: var(--select-fill); }
+.pane-error-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* legend chips — the byte-class secondary encoding */
 .legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); }

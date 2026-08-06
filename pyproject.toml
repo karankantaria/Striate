@@ -36,6 +36,11 @@ binviz = "binviz.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The built frontend, staged into the package by tools/build_ui.py. Without
+# this the wheel would contain a backend and no UI at all (§4.1).
+[tool.setuptools.package-data]
+binviz = ["webui/*", "webui/assets/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not perf'"

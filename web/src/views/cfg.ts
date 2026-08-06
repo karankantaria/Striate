@@ -18,7 +18,7 @@ import {
   type FunctionsDoc,
 } from "../api.ts";
 import type { Theme } from "../colormap.ts";
-import { esc } from "../escape.ts";
+import { el, html, rawHtml, replace, span } from "../dom.ts";
 import {
   fmtHex, fmtSize, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -170,7 +170,8 @@ export class CfgView {
     this.currentVa = null;
     this.bannerEl.hidden = true;
     this.statusEl.textContent = "";
-    this.listEl.innerHTML = `<div class="cfg-note">waiting for analysis…</div>`;
+    replace(this.listEl, el("div", { class: "cfg-note" },
+                            "waiting for analysis…"));
     this.requestDraw();
   }
 
@@ -220,36 +221,40 @@ export class CfgView {
     const fns = this.visibleFns();
     const total = doc.functions.length;
 
-    let html = "";
-    if (!total) {
-      html += `<div class="cfg-note">${doc.packed
-        ? "No functions recovered — expected for a packed binary (see banner)."
-        : "No functions recovered."}</div>`;
-    } else if (!fns.length) {
-      html += `<div class="cfg-note">0 of ${total} functions match the ` +
-        `current filter.</div>`;
-    }
-    for (const f of fns) {
-      const active = f.va === this.currentVa ? " active" : "";
-      const badge = `<span class="fn-badge b-${f.discovery}" ` +
-        `title="${esc(BADGE_TITLES[f.discovery] ?? f.discovery)}">` +
-        `${esc(f.discovery)}</span>`;
-      const incomplete = f.complete ? "" :
-        `<span class="fn-badge b-incomplete" title="decoding hit a failure or the instruction cap">partial</span>`;
-      html += `<div class="fn-row${active}" data-va="${f.va}">` +
-        `<span class="fn-name" title="${esc(f.name)} · ${f.insns} insns` +
-        `${f.unresolved ? ` · ${f.unresolved} unresolved` : ""}">` +
-        `${esc(f.name)}</span>${badge}${incomplete}` +
-        `<span class="fn-meta">${f.blocks}b · ${fmtSize(f.size)}</span>` +
-        `</div>`;
-    }
     const shownNote = fns.length !== total
       ? `${fns.length} of ${total} functions` : `${total} functions`;
     const unclaimed = doc.unclaimed_blocks.length;
-    html += `<div class="cfg-note">${shownNote}` +
-      (unclaimed ? ` · ${unclaimed} unclaimed low-confidence blocks` : "") +
-      `</div>`;
-    this.listEl.innerHTML = html;
+
+    // `f.name` is the raw symbol name — one of S2's two live sinks. As a
+    // text node it cannot be markup regardless of what the binary says.
+    replace(this.listEl,
+      !total && el("div", { class: "cfg-note" }, doc.packed
+        ? "No functions recovered — expected for a packed binary (see banner)."
+        : "No functions recovered."),
+      !!total && !fns.length && el("div", { class: "cfg-note" },
+        `0 of ${total} functions match the current filter.`),
+
+      ...fns.map((f) => el("div", {
+        class: `fn-row${f.va === this.currentVa ? " active" : ""}`,
+        "data-va": f.va,
+      },
+        el("span", {
+          class: "fn-name",
+          title: `${f.name} · ${f.insns} insns`
+            + (f.unresolved ? ` · ${f.unresolved} unresolved` : ""),
+        }, f.name),
+        el("span", {
+          class: `fn-badge b-${f.discovery}`,
+          title: BADGE_TITLES[f.discovery] ?? f.discovery,
+        }, f.discovery),
+        !f.complete && el("span", {
+          class: "fn-badge b-incomplete",
+          title: "decoding hit a failure or the instruction cap",
+        }, "partial"),
+        span("fn-meta", `${f.blocks}b · ${fmtSize(f.size)}`))),
+
+      el("div", { class: "cfg-note" }, shownNote
+        + (unclaimed ? ` · ${unclaimed} unclaimed low-confidence blocks` : "")));
 
     this.listEl.querySelectorAll<HTMLElement>(".fn-row").forEach((row) => {
       row.addEventListener("click", () =>
@@ -399,12 +404,7 @@ export class CfgView {
       const blockId = Number(node.id.slice(1));
       const u = this.current.prepared.sentinels.get(blockId);
       if (u) {
-        showTooltip(clientX, clientY,
-          `<b>unresolved indirect jump</b><br>` +
-          `<span class="t2">at ${fmtHex(u.va)} · ${esc(u.reason)}` +
-          `${u.hint ? ` · ${esc(u.hint)}` : ""}</span><br>` +
-          `<span class="t2">targets unknown — this edge is a hole in the ` +
-          `graph, not an absence of flow</span>`);
+        showTooltip(clientX, clientY, html`<b>unresolved indirect jump</b><br><span class="t2">at ${fmtHex(u.va)} · ${u.reason}${u.hint ? ` · ${u.hint}` : ""}</span><br><span class="t2">targets unknown — this edge is a hole in the graph, not an absence of flow</span>`);
       }
       return;
     }
@@ -412,15 +412,9 @@ export class CfgView {
     if (!b) return;
     const region = this.model && b.file_off >= 0
       ? regionAtOff(this.model.regions, b.file_off) : null;
-    showTooltip(clientX, clientY,
-      `<b>${fmtHex(b.va)}–${fmtHex(b.end_va)}</b> · ` +
-      `${b.insns.length} insns<br>` +
-      `<span class="t2">file ${b.file_off >= 0 ? fmtHex(b.file_off) : "–"}` +
-      `${region ? ` (${esc(region.name)})` : ""} · ` +
-      `ends with ${esc(b.terminator)} · confidence ${b.confidence}</span>` +
-      (b.confidence === "low"
-        ? `<br><span class="t2">low confidence: from a linear sweep, not ` +
-          `proven reachable</span>` : ""));
+    showTooltip(clientX, clientY, html`<b>${fmtHex(b.va)}–${fmtHex(b.end_va)}</b> · ${b.insns.length} insns<br><span class="t2">file ${b.file_off >= 0 ? fmtHex(b.file_off) : "–"}${region ? ` (${region.name})` : ""} · ends with ${b.terminator} · confidence ${b.confidence}</span>${b.confidence === "low"
+  ? rawHtml(`<br><span class="t2">low confidence: from a linear sweep, not `
+            + `proven reachable</span>`) : ""}`);
     if (b.file_off >= 0) this.store.setHover(b.file_off);
   }
 
