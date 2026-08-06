@@ -4,6 +4,7 @@
 
 import type { BinaryModel } from "../api.ts";
 import { el, replace, span } from "../dom.ts";
+import { optionList, refreshTabStop, setOptionSelected } from "../listnav.ts";
 import { fmtHex, fmtSize, type SelectionStore } from "../store.ts";
 
 export class InfoPanel {
@@ -33,6 +34,18 @@ export class InfoPanel {
       ["imports", String(m.imports.length)],
       ["sha256", m.sha256.slice(0, 16) + "…"],
     ];
+    // The region rows get their own container rather than sitting loose
+    // among the table and the warnings: the listbox below claims everything
+    // inside it as list content, and a summary table is not a list item.
+    const regions = el("div", { class: "region-list" },
+      ...m.regions.flatMap((r, i) =>
+        r.file_off < 0 || r.file_size <= 0 ? [] : [
+          el("div", { class: "region-row", "data-ri": i },
+             el("span", { class: "rname", title: r.name }, r.name),
+             span("rperms", r.perms || "–"),
+             span("rsize", fmtSize(r.file_size))),
+        ]));
+
     // `r.name` is the raw ELF/PE section name and `w` quotes whatever the
     // parser found — both attacker-controlled, both inert as text nodes.
     replace(this.el,
@@ -42,23 +55,17 @@ export class InfoPanel {
       m.warnings.length > 0 && el("h3", {}, "Warnings"),
       ...m.warnings.map((w) => el("div", { class: "warn" }, `⚠ ${w}`)),
 
-      el("h3", {}, "Regions"),
-      ...m.regions.flatMap((r, i) =>
-        r.file_off < 0 || r.file_size <= 0 ? [] : [
-          el("div", { class: "region-row", "data-ri": i },
-             el("span", { class: "rname", title: r.name }, r.name),
-             span("rperms", r.perms || "–"),
-             span("rsize", fmtSize(r.file_size))),
-        ]));
+      el("h3", { id: "regions-heading" }, "Regions"),
+      regions);
 
-    this.el.querySelectorAll<HTMLElement>(".region-row").forEach((row) => {
-      row.addEventListener("click", () => {
+    optionList(regions, "Regions",
+      [...regions.querySelectorAll<HTMLElement>(".region-row")],
+      (row) => {
         const r = m.regions[Number(row.dataset.ri)];
         this.store.setSelection(
           { start: r.file_off, end: r.file_off + r.file_size });
         this.store.setCaret(r.file_off);
       });
-    });
   }
 
   private markActive(): void {
@@ -69,7 +76,9 @@ export class InfoPanel {
       const r = m.regions[Number(row.dataset.ri)];
       const active = !!sel && r.file_off === sel.start &&
         r.file_off + r.file_size === sel.end;
-      row.classList.toggle("active", active);
+      setOptionSelected(row, active);
     });
+    const list = this.el.querySelector<HTMLElement>(".region-list");
+    if (list) refreshTabStop(list);
   }
 }

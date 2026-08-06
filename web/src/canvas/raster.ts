@@ -99,7 +99,17 @@ export class RasterCanvas {
 
   private handleResize(notify = true): void {
     const { clientWidth: w, clientHeight: h } = this.host;
-    if (w === 0 || h === 0) return;
+    if (w === 0 || h === 0) {
+      // The host has no size: either the app has not shown the layout yet,
+      // or this pane belongs to a workspace the user is not on (§3.4).
+      // Record the zero so owners' `cssW === 0` guards stop them fetching a
+      // surface nobody is looking at — but leave the canvas bitmaps alone,
+      // because resizing one clears it and we want the last frame still
+      // there when the pane comes back. Coming back fires the observer with
+      // a real size, which counts as a change and refetches.
+      this.cssW = 0; this.cssH = 0;
+      return;
+    }
     const changed = w !== this.cssW || h !== this.cssH;
     this.cssW = w; this.cssH = h;
     for (const c of [this.raster, this.overlay]) {

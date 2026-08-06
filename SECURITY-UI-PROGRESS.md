@@ -34,16 +34,17 @@ are not mine to do (see "Blocked" below). Security items first.
 | **§3.5** | **One escaper + stop hand-building HTML** | ✅ **done** |
 | **§3.1** | **File selector button** | ✅ **done** |
 | **§3.2** | **First-run state** | ✅ **done** |
-| §3.4 | Navigation (ten panes render at once) | ⬜ not started |
-| §3.6 | Accessibility baseline | ⬜ not started |
+| **§3.4** | **Navigation (ten panes render at once)** | ✅ **done** |
+| **§3.6** | **Accessibility baseline** | ✅ **done** |
 | §3.7 | 404-after-open race | ⬜ not started |
 | §2.x | Optional login mode | ⬜ not started |
 | §4.2–4.5 | Pins, LICENSE, Trusted Publishing | ⬜ not started (SECURITY.md ✅, that was §4.4) |
 
-Test baseline after §3.1/§3.2: **387 backend** (was 316), **62 frontend**
-(was 37), `npm run build` clean. **All of §1 (S1–S7), §4.1, §3.1, §3.2, §3.3
-and §3.5 are closed** — every security finding, both structural UI items, and
-the two first-run ones.
+Test baseline after §3.6: **387 backend** (was 316), **86 frontend**
+(was 37), `npm run build` clean. **All of §1 (S1–S7) and all of §3 and §4.1
+are closed** — every security finding and every UI item in the work order.
+What remains is §3.7 (an API-shape fix), §2.x (the optional login) and
+§4.2–4.5 (release metadata).
 
 > **Building a wheel now has a required first step:**
 > ```sh
@@ -525,6 +526,193 @@ name is now carried separately and shown.
 - a path outside `--root` → `"path is outside the served root"`, flagged as
   an error rather than failing silently
 
+### §3.4 — navigation ✅
+
+**Fixed 2026-08-06.** `theme.css` was a five-row grid rendering **ten panes
+at once**, with no way to focus, collapse or tab. The work order is right
+that a sixth and seventh row makes it materially worse, so this had to land
+before the new screens rather than after.
+
+**Routing, built once.** New `web/src/router.ts`: path-based (`/bytes`,
+`/patterns`, …), not hash-based, because both servers already fall through
+to `index.html` for unknown paths — §4.1 added that for the packaged mount
+and Vite does it by default — so a deep link survives a hard refresh. That
+fallback is the *precondition*; without it a hash router would be the right
+answer. `/login` (§2.5) slots in as a non-workspace route with no second
+mechanism. Verified by hard-refreshing `/patterns?path=…`.
+
+**The URL is the state**, deliberately, with no localStorage copy: the
+address bar is already shareable, survives reload, and makes Back mean
+something. A stored preference does none of that and would silently
+disagree with the URL. A test pins that.
+
+**Workspaces** (`web/src/workspace.ts`) group panes by *the question the
+analyst is asking*, not by implementation kinship:
+
+| Route | Tab | Panes |
+|---|---|---|
+| `/` | Overview | Overall, Zoomed, Signals, Binary |
+| `/bytes` | Bytes | Overall, Zoomed, Hex, Binary |
+| `/patterns` | Patterns | Bigram, Trigram, Image, Dot plot, Zoomed |
+| `/code` | Code | CFG, Binary |
+| `/all` | All | all ten — the original grid, kept for large displays |
+
+Zoomed and Binary recur because they are *context*, not content: the
+selection readout and the triage findings are what make the other panes
+interpretable. One DOM element, a different `grid-area` per workspace.
+
+Keyboard and ARIA are right from birth rather than backfilled (§3.6 says to
+set the baseline in the new navigation): a real `role="tablist"` with roving
+tabindex, arrows/Home/End, `1`–`5` to switch from anywhere, and a per-pane
+maximise button with Escape to exit. Escape is checked **before** the
+"are they typing?" guard on purpose — a maximised CFG pane contains a search
+box, and leaving the only way out unreachable from the field you are typing
+in is a trap.
+
+> **Focus mode is deliberately not routed.** Which pane is maximised is a
+> "look closer for a second" gesture; putting it in the URL would make Back
+> mean two different things depending on what you last did.
+
+**Hiding is `display: none`, and that is load-bearing.** Every view already
+owns a ResizeObserver and already guards its draw path against a zero-sized
+host, so a hidden pane stops drawing and a re-shown one repaints itself with
+no new plumbing. Hiding by opacity or offscreen positioning would keep all
+ten live and lose the point. Two consequences to know about:
+
+1. `.pane` sets `display: flex`, which **beats** the user-agent's
+   `[hidden] { display: none }` on specificity. Without the explicit
+   `.pane[hidden]` rule, hiding does nothing at all and every workspace
+   silently shows ten panes again — §3.4's own bug, reintroduced quietly.
+   There is a test for that rule.
+2. `RasterCanvas` used to *ignore* a zero size; it now records it, so the
+   surface views' existing `cssW === 0` guards stop them fetching a picture
+   nobody is looking at. The canvas bitmaps are left untouched (resizing one
+   clears it), so coming back is instant.
+
+**Two things that genuinely burn resources while hidden are gated; the rest
+are not, and that is a deliberate line.** The dot plot skips a restart at
+zero size — a restart runs a sampling pass server-side and the refine loop
+keeps asking for more — and the trigram view's rAF loop stops doing GL work
+and stops advancing the spin. Bigram, Image and Trigram still *fetch* on a
+selection change while hidden: that is one bounded request each, exactly
+what they cost today when all ten panes are always visible, so it is not a
+regression. Gating them properly needs a refetch-on-show for each, and
+getting that wrong means a pane that quietly shows the previous selection's
+data — the §3.3 failure mode. Worth doing, worth doing carefully.
+
+Measured in the browser rather than assumed: with a selection dragged on the
+Overview workspace, `surface/dotplot` requests were **zero** and the two
+visible surfaces fetched normally.
+
+> **A pre-existing bug this surfaced.** `CfgView.fit()` read
+> `host.clientWidth` at layout-completion time. That was always latent
+> (`HANDOVER.md` gotcha 3) and became reachable the moment a pane could be
+> hidden: land on `/patterns`, let the CFG layout finish, switch to Code,
+> and the graph was a one-pixel sliver at the left edge — fitted to a 0×0
+> viewport, and nothing ever recomputes the fit, so it stayed broken
+> forever. `fit()` now defers when the host has no size and the resize
+> observer completes it. Found by looking at the screen, not at the code.
+
+Also fixed while testing: `.pane-head` clipped and shredded its controls in
+the narrower workspace columns — the dot plot's title broke across two lines
+and its status label became a one-word-per-line column that ate the canvas.
+Heads now wrap to a second row instead. Costs a row of height in the narrow
+case and nothing in the wide one.
+
+Tests are the project's DOM-free kind. `router.test.ts` pins path
+normalisation and, more usefully, what a stale bookmark does (falls back
+rather than failing) and that matching is exact so a future `/login` is not
+swallowed by `/`. `workspace.test.ts` pins the agreement between three
+things nothing in the type system connects — the table, the markup and the
+CSS grids — including **every pane being reachable from some workspace**,
+which is the real regression: add a pane, forget to route it, and it is
+invisible forever with no error.
+
+**Verified in a real browser**, packaged build: all five tabs render;
+`/patterns?path=…` survives a hard refresh; back/forward move between
+workspaces with panes and tab state following; `2` switches from the
+keyboard; arrows/Home/End walk the tablist with wrap-around and focus
+surviving the route change; maximise fills the grid and refetches Overall at
+the new size; Escape exits; the triage-finding → selection path still works
+(`0x22fd–0x2b00`, the overlay); zero console output throughout.
+
+### §3.6 — accessibility baseline ✅
+
+**Fixed 2026-08-06.** The app had **zero** `aria-*` and **zero** `role=`
+attributes, and the thing the work order calls the best workflow path in the
+whole tool — click a triage finding, land on the bytes — was a mouse-only
+`<div>`. It now has 30 `aria-*` and 11 `role=`, but the count is not the
+point; three specific things were unreachable and now are not.
+
+**The three lists** (triage findings, regions, CFG functions) are ARIA
+listboxes via one shared `web/src/listnav.ts`, for the reason `escape.ts`
+exists: three hand-rolled keyboard handlers would drift and two would end up
+subtly wrong.
+
+Two design calls in there worth not undoing:
+
+1. **Listbox, not a list of `<button>`s.** Buttons would be less code, but a
+   binary with 200 functions would then put 200 stops in the tab order and
+   make Tab useless for reaching anything past the CFG pane. A roving
+   tabindex makes each list one stop, with arrows inside it. The stop sits
+   on the *selected* row, so Tab lands where the user's attention already is
+   rather than at the top of a long list.
+2. **Focus does not select.** In a plain listbox, arrows conventionally move
+   the selection. Here "selecting" drives the SelectionStore, so arrowing
+   through twenty findings would fire twenty rounds of refetch across every
+   linked view. Arrows move focus; Enter/Space commits.
+
+`setOptionSelected` sets the `active` class and `aria-selected` together,
+because they are the same fact rendered two ways — and a test fails if any
+view goes back to `classList.toggle("active", …)` directly, which is exactly
+how a list ends up looking right and announcing wrong.
+
+> **Found by using it, not by reading it.** The CFG list rebuilds its rows
+> when a function is opened — which happens *because* the user pressed Enter
+> on a row. The row they were on is destroyed mid-keystroke, so focus fell
+> back to `document.body` and every Enter cost them their place. `renderList`
+> now captures whether focus was inside the list and `focusTabStop` puts it
+> back. Verified: Enter on `compare_ints` leaves focus on `compare_ints`.
+
+**Shortcut help.** The work order's specific complaint was that the only key
+bindings were documented in a `title` tooltip — which a keyboard user never
+hovers and a screen reader is not obliged to read. `web/src/help.ts` is a
+native `<dialog>` opened with `?` or the toolbar button; `showModal()` gives
+the focus trap, the inert background and Escape-to-close from the platform,
+and each of those is something a hand-rolled overlay gets wrong. There are
+more bindings to list now than the two the work order counted: §3.4 added
+`1`–`5` and Escape, and the lists added arrows/Home/End/Enter.
+
+Escape is now overloaded (close the dialog, leave a maximised pane), so
+`main.ts` checks `isHelpOpen()` first and steps aside — otherwise one press
+would do both.
+
+**Names, not tooltips.** Every icon-only control (`‹`, `›`, `✕`, `◐`, `?`)
+gained an `aria-label`; `title` is a mouse affordance. The path input and the
+CFG filter had only placeholders — which vanish the moment there is text, so
+they are hints, not names. The status chip is `role="status"`
+`aria-live="polite"`, so analysis progress on a large file is not information
+only sighted users get.
+
+Focus rings are explicit on all three row types with a negative
+`outline-offset`, so the ring sits inside the row instead of overlapping its
+neighbours in a dense list — an invisible focus ring in a 200-row function
+list means arrowing blind.
+
+**Still mouse-only, deliberately:** clicking the hex dump to place the caret
+(`hexview.ts`) and clicking the image view to pick an offset. Those are dense
+canvas/virtualised surfaces, and giving them keyboard equivalents is a caret
+model — a feature, not a baseline fix. The work order's acceptance item is
+"findings list and region list keyboard-reachable", and that is met.
+
+**Verified in a real browser** with real keypresses, not just synthetic
+events: 41 region options with exactly one tab stop; click `.dynsym`, ↓↓,
+Enter → selection `0x332–0x334` with `aria-selected` on the activated row;
+Enter on a triage finding → `0x22fd–0x2b00`, the overlay; the CFG list
+arrow/Enter round trip above; the help dialog opening from the button and
+from `?`, toggling off, closing on Escape, and **not** hijacking `?` typed
+into the path field. Zero console output.
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -544,20 +732,18 @@ steps for the open findings.
 and tested, and most were re-verified against a running server rather than
 only in the suite.
 
-**Both structural items are done**, so new screens can now be added without
-inheriting the old habits: they get visible errors from `panestatus.ts` and
-safe rendering from `dom.ts` for free.
+**All three structural items are done**, so new screens can now be added
+without inheriting the old habits: they get visible errors from
+`panestatus.ts`, safe rendering from `dom.ts`, and a routed home in a
+workspace from `workspace.ts` for free. Adding a screen is now: build the
+view, give it a `grid-area`, add it to a workspace's `panes`, add its slot
+to that workspace's `grid-template-areas`. The tests will tell you if you
+forgot one of those.
+
+**All of §3 is now closed**, so the UI side of the work order is done.
 
 What is left of the work order, in its own order:
 
-- **§3.4 — navigation.** `theme.css` is a five-row grid rendering **ten
-  panes at once**, with no way to focus, collapse or tab. The work order is
-  right that adding a sixth and seventh row makes it materially worse, and
-  routing is needed for `/login` anyway — the SPA fallback from §4.1 already
-  supports it, so a hard refresh on a route will work.
-- **§3.6 — accessibility.** Still **zero** `aria-*` and `role=` attributes
-  outside the two I added (`panestatus.ts` and the new buttons). The primary
-  navigation flow — clicking a triage finding — is a mouse-only `<div>`.
 - **§3.7 — the 404-after-open race.** `POST /api/open` returns an id whose
   `/status` 404s until the analysis thread writes `meta.json`; `main.ts:110`
   special-cases it and every other client must too. Return the initial status
@@ -569,18 +755,27 @@ What is left of the work order, in its own order:
 - **§4.2/§4.3/§4.5** loosen the `==` dependency pins, add the MIT LICENSE
   text (`pyproject.toml` declares MIT but no file exists), Trusted Publishing.
 
-Two things learned by testing that are easy to trip over again:
+Things learned by testing that are easy to trip over again:
 
 - The image view clamps `width` to ≥1 **client-side**, so a bad width never
   reaches the server. UI validation and the server-side 400s (S3) are
   therefore independent — testing one does not cover the other.
 - Anything that needs to know where the server can read from must ask
   `GET /api/config`. Do not reach for `"."`.
+- **A pane can now be hidden, so "the host has a size" is no longer a safe
+  assumption anywhere.** Views that read `clientWidth` at *draw* time were
+  all fine; the one that read it once at load time (`CfgView.fit`) was
+  silently broken. If you add a view, read the size when you use it.
+- **A list that rebuilds when you activate it destroys the row you are
+  standing on.** Harmless with a mouse, and it costs a keyboard user their
+  place on every Enter. Capture `contains(document.activeElement)` before
+  the rebuild.
 
 Now genuinely unblocked by §4.1: **§2.2's `none` auth mode** — with
 same-origin serving, the server can inject the token into the served HTML and
 the desktop app becomes one-click while staying authenticated on the wire.
-That is a small change now and the natural companion to the login screen.
+That is a small change now and the natural companion to the login screen,
+and §3.4's router is where `/login` hangs.
 
 Still true: **do not add a pywebview `js_api` bridge** until §2.4's checklist
 is satisfied. S2 and the CSP were the preconditions and both are done, but
@@ -590,14 +785,3 @@ same-origin serving — that last one is now satisfied) still applies.
 One thing left for the owner: `README.md` says "Phase 3 complete" while
 `HANDOVER.md` says Phase 12. Project status is your call, but it is the first
 thing a visitor to a public repo reads.
-
-After the security items, the work order's order puts **§4.1** (static mount
-+ package data) next — it is a genuine release blocker, since the wheel
-currently ships no UI at all. It also simplifies S1c: once the frontend is
-served from the same origin as the API, there is no cross-origin request left
-to authorise.
-
-Still true and still worth heeding: **do not add a pywebview `js_api` bridge**
-until §2.4's checklist is satisfied. S2 is fixed, which was the precondition,
-but the rest of that section (minimal bridge surface, `debug=False` in
-release, same-origin serving) is not.

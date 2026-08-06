@@ -201,6 +201,10 @@ export class Hist3DView {
   private fetchSeq = 0;
   private refetchTimer: number | undefined;
   private ro: ResizeObserver;
+  /** Pane not on screen (§3.4). Cached from the resize observer rather than
+      read per frame: `clientWidth` forces a layout, and this is checked 60
+      times a second. */
+  private offscreen = true;
 
   constructor(host: HTMLElement, store: SelectionStore, _theme: Theme) {
     this.host = host;
@@ -346,7 +350,8 @@ export class Hist3DView {
 
   private resize(): void {
     const w = this.host.clientWidth, h = this.host.clientHeight;
-    if (w === 0 || h === 0) return;
+    this.offscreen = w === 0 || h === 0;
+    if (this.offscreen) return;
     for (const c of [this.glCanvas, this.overlay]) {
       c.width = w * devicePixelRatio;
       c.height = h * devicePixelRatio;
@@ -358,6 +363,12 @@ export class Hist3DView {
 
   private frame(t: number): void {
     requestAnimationFrame((tt) => this.frame(tt));
+    // A hidden pane keeps its rAF loop (so it resumes instantly) but does no
+    // GL work and does not advance the spin — otherwise the Patterns
+    // workspace would cost a GPU frame every 16 ms from whichever tab the
+    // user is actually on. `dirty` is set by resize() on the way back, so
+    // the first visible frame repaints.
+    if (this.offscreen) { this.lastFrame = t; return; }
     const dt = this.lastFrame ? Math.min((t - this.lastFrame) / 1000, 0.1) : 0;
     this.lastFrame = t;
     const idle = !this.dragging &&

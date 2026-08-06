@@ -19,6 +19,7 @@ import {
 } from "../api.ts";
 import type { Theme } from "../colormap.ts";
 import { el, html, rawHtml, replace, span } from "../dom.ts";
+import { focusTabStop, optionList } from "../listnav.ts";
 import {
   fmtHex, fmtSize, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -91,6 +92,9 @@ export class CfgView {
   private currentVa: number | null = null;
 
   private view: Transform = { scale: 1, tx: 0, ty: 0 };
+  /** A fit asked for while the pane had no size; the resize observer
+      completes it once the pane is on screen. */
+  private fitPending = false;
   private hoverId: string | null = null;
   private raf = 0;
   private charW: number;
@@ -129,7 +133,10 @@ export class CfgView {
     );
     this.worker.onmessage = (ev) => this.onLayout(ev.data);
 
-    new ResizeObserver(() => this.requestDraw()).observe(host);
+    new ResizeObserver(() => {
+      // a fit deferred because the pane was hidden lands here
+      if (this.fitPending) this.fit(); else this.requestDraw();
+    }).observe(host);
 
     store.on("theme", (t) => { this.theme = t; this.renderList(); this.requestDraw(); });
     store.on("selection", () => {
@@ -217,6 +224,10 @@ export class CfgView {
 
   private renderList(): void {
     if (!this.funcs) return;
+    // this list rebuilds when a function is opened, which happens *because*
+    // the user pressed Enter on a row — note where focus was so it can go
+    // back afterwards rather than falling out to the document body
+    const hadFocus = this.listEl.contains(document.activeElement);
     const doc = this.funcs;
     const fns = this.visibleFns();
     const total = doc.functions.length;
@@ -256,10 +267,12 @@ export class CfgView {
       el("div", { class: "cfg-note" }, shownNote
         + (unclaimed ? ` · ${unclaimed} unclaimed low-confidence blocks` : "")));
 
-    this.listEl.querySelectorAll<HTMLElement>(".fn-row").forEach((row) => {
-      row.addEventListener("click", () =>
-        this.openFunction(Number(row.dataset.va)));
-    });
+    // `.active` is stamped during the build above, so aria-selected and the
+    // list's single tab stop follow from it without a second pass.
+    optionList(this.listEl, "Functions",
+      [...this.listEl.querySelectorAll<HTMLElement>(".fn-row")],
+      (row) => void this.openFunction(Number(row.dataset.va)));
+    if (hadFocus) focusTabStop(this.listEl);
   }
 
   /* ------------------------------------------------- function loading */
@@ -329,9 +342,16 @@ export class CfgView {
 
   fit(): void {
     if (!this.current) return;
-    this.view = fitTransform(
-      this.current.layout.w, this.current.layout.h,
-      this.host.clientWidth, this.host.clientHeight);
+    const w = this.host.clientWidth, h = this.host.clientHeight;
+    // A layout can now finish while this pane is hidden — the Code
+    // workspace is one tab among five (§3.4) — and fitting a graph to a
+    // 0x0 viewport produces a transform that draws it as a one-pixel
+    // sliver at the left edge, which survives every later redraw because
+    // nothing recomputes the fit. Defer instead, and let the resize
+    // observer finish the job when the pane is actually on screen.
+    if (w < 2 || h < 2) { this.fitPending = true; return; }
+    this.fitPending = false;
+    this.view = fitTransform(this.current.layout.w, this.current.layout.h, w, h);
     this.requestDraw();
   }
 

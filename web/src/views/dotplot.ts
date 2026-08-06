@@ -132,6 +132,13 @@ export class DotPlotView {
     this.r1 = this.axisRange(this.c.ax1.value as DotAxis);
     this.r2 = this.axisRange(this.c.ax2.value as DotAxis);
     this.view.sync();
+    // Hidden pane (a workspace the user is not on, §3.4): do nothing. This
+    // is the one view where that matters beyond politeness — a dot plot
+    // restart runs a sampling pass server-side and the refine loop keeps
+    // asking for more, so a hidden one would burn CPU and disk on a picture
+    // nobody is looking at. Showing the pane resizes the canvas, which
+    // fires onResize -> debouncedRestart.
+    if (this.view.cssW === 0) return;
     this.side = Math.max(MIN_SIDE, Math.min(
       MAX_SIDE, Math.min(this.view.cssW, this.view.cssH) || 512));
     this.passes = 0;

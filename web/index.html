@@ -30,7 +30,12 @@
     <div id="app">
       <header id="toolbar">
         <span class="brand">binviz</span>
+        <!-- aria-label, not just a placeholder: a placeholder disappears the
+             moment there is text in the field, so it is a hint rather than a
+             name (§3.6). Same reasoning for every icon-only button below —
+             `title` is a tooltip a keyboard user never sees. -->
         <input id="path-input" type="text" spellcheck="false" list="recent-files"
+               aria-label="Path to a binary"
                placeholder="absolute path to a binary… (or drop a file anywhere)" />
         <datalist id="recent-files"></datalist>
         <button id="open-btn">Open</button>
@@ -39,16 +44,27 @@
              exposes an absolute path, so this route uploads the bytes; the
              desktop build uses a native dialog and keeps the real path. -->
         <input id="file-input" type="file" hidden />
-        <button id="nav-prev" title="previous file in directory ( [ )" disabled>‹</button>
-        <button id="nav-next" title="next file in directory ( ] )" disabled>›</button>
+        <button id="nav-prev" title="previous file in directory ( [ )"
+                aria-label="Previous file in directory" disabled>‹</button>
+        <button id="nav-next" title="next file in directory ( ] )"
+                aria-label="Next file in directory" disabled>›</button>
         <span id="nav-pos" class="range-label muted" hidden></span>
-        <span id="status-chip" class="chip" hidden></span>
+        <!-- analysis progress: announced as it changes, without stealing
+             focus, so it is not information only sighted users get -->
+        <span id="status-chip" class="chip" role="status" aria-live="polite" hidden></span>
         <span class="spacer"></span>
         <span id="file-label" class="file-label"></span>
-        <button id="theme-btn" title="toggle light/dark">◐</button>
+        <button id="help-btn" title="keyboard shortcuts ( ? )"
+                aria-label="Keyboard shortcuts">?</button>
+        <button id="theme-btn" title="toggle light/dark"
+                aria-label="Toggle light and dark theme">◐</button>
       </header>
 
-      <main id="layout" hidden>
+      <!-- Filled in by workspace.ts from the WORKSPACES table, so the tabs
+           and the grids they select cannot drift apart. -->
+      <nav id="workspace-tabs" role="tablist" aria-label="Workspace" hidden></nav>
+
+      <main id="layout" role="tabpanel" hidden>
         <section id="overall-pane" class="pane">
           <div class="pane-head">
             <h2>Overall</h2>
@@ -70,7 +86,8 @@
           <div class="pane-head">
             <h2>Zoomed</h2>
             <span id="zoom-range" class="range-label muted">no selection</span>
-            <button id="zoom-clear" title="clear selection">✕</button>
+            <button id="zoom-clear" title="clear selection"
+                    aria-label="Clear selection">✕</button>
           </div>
           <div id="zoom-canvas" class="canvas-host"></div>
         </section>
@@ -124,7 +141,8 @@
               <option value="f64be">f64be</option>
             </select>
             <span id="hist2d-status" class="range-label muted"></span>
-            <button id="locate-clear" title="clear brush highlight">✕</button>
+            <button id="locate-clear" title="clear brush highlight"
+                    aria-label="Clear brush highlight">✕</button>
           </div>
           <div id="hist2d-canvas" class="canvas-host"></div>
         </section>
@@ -193,6 +211,7 @@
           <div class="pane-head">
             <h2>CFG</h2>
             <input id="cfg-search" type="text" spellcheck="false"
+                   aria-label="Filter functions"
                    placeholder="filter…" class="offset-input" />
             <label class="toggle" title="show only functions overlapping the selection">
               <input type="checkbox" id="cfg-filter-sel" />selection only</label>

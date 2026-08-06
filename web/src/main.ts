@@ -10,8 +10,14 @@ import {
 } from "./api.ts";
 import type { Theme } from "./colormap.ts";
 import { append, el, replace } from "./dom.ts";
+import { initHelp, isHelpOpen } from "./help.ts";
+import { Router } from "./router.ts";
 import { SelectionStore, fmtRange, fmtSize, type ElementDtype } from "./store.ts";
 import type { DisplayMode } from "./transforms.ts";
+import {
+  applyWorkspace, clearFocus, DEFAULT_ROUTE, initPaneFocus, renderTabs,
+  setActiveTab, workspaceByRoute, WORKSPACE_ROUTES, WORKSPACES,
+} from "./workspace.ts";
 import { CfgView } from "./views/cfg.ts";
 import { DotPlotView } from "./views/dotplot.ts";
 import { HexView } from "./views/hexview.ts";
@@ -166,6 +172,7 @@ async function onModelReady(st: Status): Promise<void> {
     updateNav();
   }
   $("layout").hidden = false;
+  $("workspace-tabs").hidden = false;
   $("empty-state").hidden = true;
   // For an upload, source.path is the cache's own `file.bin`, which is not
   // what the user picked — show the name they chose instead.
@@ -197,6 +204,28 @@ function setStatus(text: string, err = false): void {
   chip.textContent = text;
   chip.classList.toggle("err", err);
 }
+
+/* ------------------------------------------------- workspaces (§3.4)
+
+   The grid used to render all ten panes at once, with no way to focus,
+   collapse or tab — and the work order is right that a sixth and seventh
+   screen would make that materially worse, so this lands before them.
+
+   The router owns the state: the URL names the workspace, Back works, and
+   a deep link survives a hard refresh because both the packaged mount
+   (§4.1) and Vite fall through to index.html. `/login` (§2.5) slots into
+   the same router as a non-workspace route when it is built. */
+
+const router = new Router(WORKSPACE_ROUTES, DEFAULT_ROUTE);
+
+initHelp($("help-btn"));
+initPaneFocus($("layout"));
+renderTabs($("workspace-tabs"), (ws) => router.go(ws.route));
+
+router.start((route) => {
+  applyWorkspace($("layout"), workspaceByRoute(route));
+  setActiveTab($("workspace-tabs"), route);
+});
 
 /* --------------------------------------- file navigation (Phase 11)
    Prev/next through the open file's directory with the current lens
@@ -242,12 +271,25 @@ function navTo(delta: number): void {
 $("nav-prev").addEventListener("click", () => navTo(-1));
 $("nav-next").addEventListener("click", () => navTo(+1));
 document.addEventListener("keydown", (e) => {
+  // Escape is checked before the typing guard on purpose: it is not a text
+  // character, and a maximised CFG pane has a search box in it — leaving the
+  // only way out unreachable from the field you are typing in is a trap.
+  // The help dialog closes itself on Escape (that is what <dialog> does), so
+  // step aside rather than also dropping the user out of focus mode.
+  if (e.key === "Escape") {
+    if (!isHelpOpen()) clearFocus($("layout"));
+    return;
+  }
   const t = e.target as HTMLElement | null;
   const tag = t?.tagName ?? "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
       || t?.isContentEditable) return;   // typing somewhere
   if (e.key === "[") navTo(-1);
   else if (e.key === "]") navTo(+1);
+  else if (e.key >= "1" && e.key <= "9") {
+    const ws = WORKSPACES[Number(e.key) - 1];
+    if (ws) router.go(ws.route);
+  }
 });
 
 /* ------------------------------------------------------ recent files */

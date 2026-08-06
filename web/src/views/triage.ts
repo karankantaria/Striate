@@ -5,6 +5,7 @@
 
 import type { TriageDoc, TriageFinding, Verdict } from "../api.ts";
 import { el, replace, span } from "../dom.ts";
+import { optionList, refreshTabStop, setOptionSelected } from "../listnav.ts";
 import { fmtHex, type SelectionStore } from "../store.ts";
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -57,13 +58,15 @@ export class TriagePanel {
       !doc.findings.length
         && el("div", { class: "muted triage-none" }, "no findings"));
 
-    this.el.querySelectorAll<HTMLElement>(".finding-row.nav").forEach((row) => {
-      row.addEventListener("click", () => {
+    // Only the findings that carry offsets are navigable, so only those
+    // become options — marking an inert row as an option would promise an
+    // interaction that does not exist.
+    optionList(this.el, "Triage findings",
+      [...this.el.querySelectorAll<HTMLElement>(".finding-row.nav")],
+      (row) => {
         const f = this.doc?.findings[Number(row.dataset.fi)];
-        if (!f?.offsets) return;
-        this.navigate(f);
+        if (f?.offsets) this.navigate(f);
       });
-    });
   }
 
   private navigate(f: TriageFinding): void {
@@ -78,7 +81,8 @@ export class TriagePanel {
       const f = this.doc?.findings[Number(row.dataset.fi)];
       const active = !!sel && !!f?.offsets &&
         f.offsets[0] === sel.start && f.offsets[1] === sel.end;
-      row.classList.toggle("active", active);
+      setOptionSelected(row, active);
     });
+    refreshTabStop(this.el);
   }
 }
