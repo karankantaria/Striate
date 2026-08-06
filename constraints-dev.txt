@@ -32,6 +32,12 @@ fastapi==0.141.1
 uvicorn==0.52.1
 pillow==12.3.0
 
+# --- optional extra: the desktop window ---------------------------------
+# Not a runtime dependency (see the `app` extra in pyproject.toml), but the
+# js_api bridge tests skip without it, and §2.4's minimal-surface rule is
+# only a rule if something checks it.
+pywebview==6.2.1
+
 # --- test ---------------------------------------------------------------
 pytest==9.1.1
 httpx==0.28.1

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import webbrowser
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -132,6 +133,33 @@ def main(argv: list[str] | None = None) -> int:
                          help="evict least-recently-used cached analyses past "
                               "this total (default 5 GiB)")
 
+    p_app = sub.add_parser(
+        "app", help="open the desktop window (needs binviz[app])")
+    p_app.add_argument("--host", default="127.0.0.1")
+    p_app.add_argument("--port", type=int, default=0,
+                       help="0 (the default) lets the OS pick a free port, so "
+                            "this never clashes with a running `binviz serve`")
+    p_app.add_argument("--cache", help="cache root (default ~/.cache/binviz "
+                       "or $BINVIZ_CACHE)")
+    p_app.add_argument("--root", metavar="DIR",
+                       help="confine file access to DIR (default: cwd)")
+    p_app.add_argument("--auth", choices=("none", "local"), default="none",
+                       help="'none' (default) signs you in invisibly; 'local' "
+                            "shows the sign-in screen")
+    p_app.add_argument("--open", dest="open_path", metavar="FILE",
+                       help="analyse FILE in the background on startup")
+    p_app.add_argument("--browser", action="store_true",
+                       help="use the default browser instead of a native "
+                            "window (also the automatic fallback when "
+                            "pywebview is not installed)")
+    p_app.add_argument("--devtools", action="store_true",
+                       help="enable the webview's developer tools. Off by "
+                            "default and never on in a release build: it "
+                            "hands a page a debugger inside the desktop app.")
+    # Deliberately NO --no-auth here. Wrapping the UI in a window does not
+    # remove the network listener, it only makes it less obvious there is
+    # one, so the desktop build always authenticates (work order §2.4).
+
     p_passwd = sub.add_parser(
         "passwd", help="set this install's sign-in credential (--auth local)")
     p_passwd.add_argument("--cache", help="cache root (default ~/.cache/binviz "
@@ -195,8 +223,130 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_serve(args)
     if args.command == "passwd":
         return _cmd_passwd(args)
+    if args.command == "app":
+        return _cmd_app(args)
 
     return 1
+
+
+def _cmd_app(args) -> int:
+    """Open the desktop window (RELEASE.md §2, work order §2.4).
+
+    Same server, same token, same confinement as `binviz serve` — the only
+    difference is what displays it. Everything security-relevant about that
+    choice is argued in `app.py`'s module docstring.
+    """
+    import os
+    from pathlib import Path
+
+    from .app import (Bridge, WINDOW_MIN_SIZE, WINDOW_SIZE, WINDOW_TITLE,
+                      icon_path, serve_in_thread)
+    from .cache import default_root
+    from .service import create_app
+
+    def cache_root():
+        return args.cache or default_root()
+
+    file_root = os.path.realpath(args.root or os.getcwd())
+    app = create_app(args.cache, auth=True, auth_mode=args.auth,
+                     file_root=file_root)
+
+    if args.open_path:
+        from .loader import sha256_file
+
+        if not os.path.isfile(args.open_path):
+            print(f"binviz: no such file: {args.open_path}", file=sys.stderr)
+            return 1
+        app.state.jobs.ensure(sha256_file(args.open_path),
+                              os.path.abspath(args.open_path),
+                              args.cache, stored=False)
+
+    try:
+        server, thread, port = serve_in_thread(app, args.host, args.port)
+    except Exception as e:
+        print(f"binviz: could not start the server: {e}", file=sys.stderr)
+        return 1
+
+    url = f"http://{args.host}:{port}/"
+    if app.state.ui_root is None:
+        # The window would open on a JSON 404 and look like a broken app.
+        print("binviz: this install has no packaged UI; run "
+              "tools/build_ui.py, or use `binviz serve` for the API alone",
+              file=sys.stderr)
+        return 1
+
+    try:
+        import webview
+    except ImportError:
+        webview = None
+
+    if webview is None or args.browser:
+        if webview is None and not args.browser:
+            print("binviz: pywebview is not installed, opening a browser "
+                  "instead (`pip install \"binviz[app]\"` for a native "
+                  "window)")
+        print(f"binviz: serving {file_root}\n  {url}", flush=True)
+        webbrowser.open(url)
+        try:
+            thread.join()
+        except KeyboardInterrupt:
+            pass
+        return 0
+
+    # Say the listener exists. §2.4's point is that a desktop wrapper makes
+    # the user *less* likely to realise a server is running, because there
+    # is no terminal and no tab — so the one place there is still a terminal
+    # should not stay quiet about it.
+    print("\n".join((
+        f"binviz: serving {file_root}",
+        f"  a local server is running at {url} (token-authenticated)",
+        "  it stops when you close the window",
+    )), flush=True)
+
+    if args.devtools:
+        # Loud, because this is the one setting §2.4 names by name: devtools
+        # in a shipped app hands a debugger to whatever the page contains.
+        print("binviz: !! developer tools are ENABLED in this window",
+              flush=True)
+
+    window_ref: list = [None]
+    bridge = Bridge(lambda: window_ref[0], file_root)
+    window_ref[0] = webview.create_window(
+        WINDOW_TITLE, url,
+        js_api=bridge,
+        width=WINDOW_SIZE[0], height=WINDOW_SIZE[1],
+        min_size=WINDOW_MIN_SIZE,
+    )
+
+    start_kw = {"debug": bool(args.devtools)}
+    # pywebview defaults to private_mode=True, which throws away web storage
+    # when the window closes. That would quietly break two things the tool
+    # leans on: the recent-files list and the view lens (dtype, layouts,
+    # modes), both of which live in localStorage precisely so they survive a
+    # reload. The token is in sessionStorage and dies with the window either
+    # way, so nothing secret is being persisted here — only paths and
+    # preferences, next to a cache that already holds the analyses.
+    start_kw["private_mode"] = False
+    start_kw["storage_path"] = str(Path(cache_root()) / "webview")
+    icon = icon_path()
+    if icon:
+        # Only some backends honour it, and missing branding must never stop
+        # the app opening.
+        start_kw["icon"] = icon
+    try:
+        webview.start(**start_kw)
+    except TypeError:
+        # An older pywebview without one of the optional keywords: drop the
+        # cosmetic ones and try again rather than failing to open at all.
+        for optional in ("icon", "storage_path", "private_mode"):
+            start_kw.pop(optional, None)
+        webview.start(**start_kw)
+
+    # The window is closed: stop accepting requests rather than leaving a
+    # listener behind an invisible app.
+    server.should_exit = True
+    thread.join(timeout=5)
+    return 0
 
 
 def _cmd_passwd(args) -> int:

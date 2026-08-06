@@ -41,6 +41,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# `binviz app`, the native desktop window (RELEASE.md §2). An extra rather
+# than a runtime dependency so the base install stays lean — pywebview pulls
+# a GUI toolkit binding on Linux, and most installs only ever want the
+# server. Without it `binviz app` opens the default browser instead.
+app = ["pywebview>=5.0,<7"]
 dev = [
     "pytest>=8,<10",
     # FastAPI's TestClient transport (tests/test_service.py)
@@ -71,7 +76,7 @@ where = ["src"]
 # The built frontend, staged into the package by tools/build_ui.py. Without
 # this the wheel would contain a backend and no UI at all (§4.1).
 [tool.setuptools.package-data]
-binviz = ["webui/*", "webui/assets/*"]
+binviz = ["webui/*", "webui/assets/*", "icons/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -16,3 +16,7 @@ corpus/tools/
 # the built frontend, staged into the package by tools/build_ui.py before a
 # wheel is built — generated output, rebuilt from web/ on demand
 src/binviz/webui/
+
+# the window icon, staged from packaging/icons/ by the same tool. Copied
+# rather than committed so there is only one canonical set of branding.
+src/binviz/icons/

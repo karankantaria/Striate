@@ -87,6 +87,26 @@ dev proxy, which reads `BINVIZ_TOKEN`), `--port`, `--cache`, and `--no-auth`
 for CI. `--no-auth` prints a banner telling you what it turned off; do not
 use it on a machine you share.
 
+### Desktop window
+
+```sh
+pip install "binviz[app]"
+binviz app                    # native window; --browser for your browser
+```
+
+Same server, same token, same `--root` confinement as `binviz serve` — the
+only difference is what displays it. Without pywebview installed, `binviz
+app` opens your browser instead.
+
+It prints the URL it is serving on, deliberately: wrapping the UI in a
+window does not remove the network listener, it only makes it easier to
+forget there is one. The listener is authenticated either way, and there is
+no `--no-auth` on `binviz app`.
+
+The window exposes exactly one function to the page — a native file picker —
+and nothing else. See `src/binviz/app.py` for why that list is as short as
+it is.
+
 ### Signing in
 
 By default there is no login screen and nothing to copy: the server mints a

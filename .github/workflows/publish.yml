@@ -57,7 +57,9 @@ jobs:
       - name: run the test suite
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" -c constraints-dev.txt
+          # [app] too: the js_api bridge tests (§2.4) skip without
+          # pywebview, and a minimal-surface rule nobody checks is not a rule
+          pip install -e ".[dev,app]" -c constraints-dev.txt
           python -m pytest -q
 
       - name: build the distributions
@@ -121,8 +123,9 @@ jobs:
           fastapi==0.115
           uvicorn==0.30
           pillow==10.1
+          pywebview==5.0
           EOF
-          pip install -e ".[dev]" -c /tmp/floors.txt
+          pip install -e ".[dev,app]" -c /tmp/floors.txt
           pip list
       - name: build and stage the frontend
         run: |

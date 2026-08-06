@@ -42,14 +42,15 @@ are not mine to do (see "Blocked" below). Security items first.
 | **§4.2** | **Loosen the `==` dependency pins** | ✅ **done** |
 | **§4.3** | **LICENSE file is missing** | ✅ **done** |
 | **§4.5** | **PyPI Trusted Publishing** | ✅ **done** |
+| **§2.4** | **Desktop window + `js_api` bridge** | ✅ **done** |
 
-Test baseline: **405 backend** (was 316), **87 frontend** (was 37),
-`npm run build` clean, and both distributions build with the UI and the
-licence in them.
+Test baseline: **419 backend** (was 316), **87 frontend** (was 37),
+`npm run build` clean, and both distributions build with the UI, the icons
+and the licence in them.
 
-**The work order is complete.** Every item in §0–§4 is closed except §2.4,
-which is not a fix but a checklist to satisfy *when* the pywebview bridge is
-written — see "Next up".
+**The work order is complete.** Every item in §0–§4 is closed, including
+§2.4 — which was never a bug, but a checklist to satisfy when the pywebview
+bridge got written. It is written.
 
 > **Building a wheel now has a required first step:**
 > ```sh
@@ -1078,6 +1079,112 @@ with the token injected into the page, `/api/config` answering with that
 token, and the CSS asset resolving. The OIDC exchange itself can only be
 verified by publishing.
 
+### §2.4 — the desktop window and the `js_api` bridge ✅
+
+**Done 2026-08-06.** `binviz app` (RELEASE.md §2): the existing service plus
+the packaged frontend in one process, with a native pywebview window pointed
+at it. pywebview is an optional extra (`pip install "binviz[app]"`) so the
+base install stays lean; without it the command opens the default browser.
+
+§2.4 is not a bug report — it is a set of constraints on code that did not
+exist yet. All five are now satisfied, and each is pinned by a test, because
+constraints like these erode silently: someone adds "just one more" bridge
+method a year from now and nothing complains.
+
+| §2.4 requires | State |
+|---|---|
+| Fix S2 | done earlier |
+| Add the CSP | done earlier |
+| Keep the `js_api` surface minimal | `Bridge` has **one** method |
+| No `debug=True` in release builds | off unless `--devtools` |
+| Serve the UI same-origin | done in §4.1 |
+
+**The bridge is one method, `pick_file()`, and it takes no arguments.**
+pywebview exposes every public attribute of the `js_api` object, so the rule
+is: one public method, everything else underscored. Why this one is safe
+enough to be the exception:
+
+- It takes no arguments, so nothing can steer it — in particular it cannot
+  be handed a path, which §2.4 names explicitly. That is a stronger property
+  than validating a path argument would have been.
+- It spawns no subprocess and opens no file. A test greps the module for
+  `subprocess`, `os.system`, `os.popen`, `eval(`, `exec(` and `open(` —
+  checking the *capability* is absent rather than that one path avoids it.
+- It cannot act alone: a dialog with nobody in front of it returns nothing.
+  From injected script the worst case is an unwanted dialog.
+- The path it returns is not privileged. It goes back to the frontend, which
+  POSTs it to `/api/open`, where `--root` confinement (S1d) applies exactly
+  as it does to a typed path. The dialog also *opens* at `--root`, per §3.1.
+
+A re-entrancy lock covers the annoyance case: without it, looping script
+could open dialogs forever and make the window unusable.
+
+**The listener is unchanged and still gated.** §2.4's first warning is that
+a window does not remove the network listener, it only makes the user less
+likely to realise there is one. So `binviz app` has **no `--no-auth`** —
+unlike `binviz serve` — and it prints the URL it is serving on, because the
+one place there is still a terminal should not stay quiet about it. The port
+defaults to 0 so it never clashes with a running `binviz serve`; that is
+politeness about ports, **not** a control, and the module says so.
+
+> **The question §2.4 leaves open, answered by measurement.** The CSP is
+> `script-src 'self'` with no `unsafe-inline` (S2) and pywebview injects
+> `window.pywebview` into the page. If the CSP blocked that, the bridge
+> would be silently dead and the desktop picker would fall back to
+> uploading — the thing §3.1 calls strictly worse. It does not: host-side
+> injection is not subject to page CSP. Verified in the real window rather
+> than reasoned about, by asking the live page what it could see:
+>
+> ```
+> pywebview_present: object    api_methods: ["pick_file"]
+> pick_file_present: function  frontend_sees_bridge: true
+> app_booted: true             samples: 6
+> ```
+>
+> That `api_methods` is exactly `["pick_file"]` **at runtime in the real
+> window** is the §2.4 minimal-surface requirement holding where it counts,
+> not just in `dir()`.
+
+> **A crash found only by running an installed wheel.** Passing the 256px
+> PNG as the window icon throws
+> `System.ArgumentException: Argument 'picture' must be a picture that can
+> be used as a Icon` from inside .NET — an unhandled exception on a foreign
+> thread that kills the process *before any Python `except` can see it*, so
+> the app just fails to open with a stack trace in a log nobody reads. The
+> Windows backend goes through `System.Drawing.Icon` and accepts only
+> `.ico`. `icon_path()` now picks by platform (`.ico` on Windows, `.png`
+> elsewhere) and `tools/build_ui.py` stages both. A test pins it.
+
+Two smaller things the pywebview API forced:
+
+1. **`OPEN_DIALOG` is deprecated in 6.x** (`FileDialog.OPEN` now) and absent
+   under that name in 5.x. The extra allows `>=5,<7`, so `_open_dialog()`
+   picks whichever exists — a deprecation warning on the stderr of a GUI app
+   is a warning nobody will ever read.
+2. **`private_mode=True` is pywebview's default**, and it throws away web
+   storage when the window closes. That would quietly break the recent-files
+   list and the view lens (dtype, layouts, modes), which live in
+   localStorage precisely so they survive a reload. Now `private_mode=False`
+   with a `storage_path` under the cache root. Nothing secret is persisted:
+   the token is in sessionStorage and dies with the window either way.
+
+**Icons are staged, not committed.** `tools/build_ui.py` copies them from
+`packaging/icons/` into the package (gitignored, like the UI bundle), because
+`packaging/icons/` is the canonical branding and two copies in one repo is
+exactly what RELEASE.md warns against.
+
+**Verified from an installed wheel**, not just from the checkout:
+`pip install "binviz[app]"` into a clean venv, `binviz app` opens, announces
+`http://127.0.0.1:62090/`, and from outside that window `/api/config`
+answers **401** while `/` serves the page with its boot meta. That pair is
+the whole of §2.4 in one observation: the desktop listener is a real
+listener, and it is still authenticated.
+
+Not verified headlessly, and worth knowing: **the file dialog actually
+returning a path needs a human in front of it.** The unit tests drive that
+path with a fake window (dialog opens at `--root`, `allow_multiple` false,
+re-entrancy blocked); the last inch is a manual check.
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -1121,13 +1228,17 @@ scoped *out*, plus a release decision that is the repo owner's:
   private is much weaker than it was — but it is a deliberate call, not an
   oversight, and it is yours to make.
 
-**§2.4 is now the only thing between here and the desktop app.** Its
-preconditions are all satisfied — S2 is fixed, the CSP is in place, and the
-UI is served same-origin — so what is left of that section is the bridge
-itself: keep the `js_api` surface minimal (nothing that takes a path or
-spawns a subprocess), and make sure `debug=True` is off in release builds.
-`main.ts` already *detects* `window.pywebview.api.pick_file` for the native
-file dialog (§3.1); it does not create it.
+**The desktop app exists** (`binviz app`, §2.4). If you extend it, the one
+rule to keep is the size of the `js_api` surface: every public method on
+`Bridge` is reachable from any script that runs in that window, and this
+tool opens files an attacker chose. `tests/test_app.py` fails if a second
+method appears — that failure is the design working, not a test to update.
+
+Still open from RELEASE.md §2, and deliberately not done here: the
+PyInstaller **onedir** spec for a standalone build. That is a packaging
+artefact rather than a security item, and RELEASE.md §1 is explicit that no
+prebuilt executables are attached to releases anyway — the repo carries what
+you need to build one yourself.
 
 Things learned by testing that are easy to trip over again:
 
