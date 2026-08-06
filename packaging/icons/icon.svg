@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Striate">
+  <!-- Striate (binviz) — order-2 Hilbert curve traversing a 4x4 byte grid.
+       Cream cap = offset 0. Sage cap = end of file. -->
+  <rect width="1024" height="1024" rx="208" fill="#524646"/>
+  <path d="M146 146 H390 V390 H146 V878 H390 V634 H634 V878 H878 V390 H634 V146 H878"
+        fill="none" stroke="#EC5B38" stroke-width="128"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="146" cy="146" r="64" fill="#FCF2E5"/>
+  <circle cx="878" cy="146" r="64" fill="#A8A492"/>
+</svg>

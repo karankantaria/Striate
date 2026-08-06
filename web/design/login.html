@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Striate</title>
+
+<script>
+  /* Opt in to the boot sequence only when JS is running and the person
+     has not asked for reduced motion. Everything animated is scoped to
+     .boot, so without this class the page renders in its final state. */
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.documentElement.classList.add('boot');
+  }
+</script>
+
+<style>
+  :root {
+    --cream:   #FCF2E5;
+    --accent:  #EC5B38;
+    --bg:      #524646;
+    --sage:    #A8A492;
+    --panel:   #453B3B;
+    --field:   #372F2F;
+    --ink:     #2B2424;
+    --hair:    rgba(168, 164, 146, 0.22);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+            "Liberation Mono", "Courier New", monospace;
+    --ease: cubic-bezier(0.65, 0, 0.35, 1);
+    --settle: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  ::selection { background: var(--accent); color: var(--ink); }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--cream);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ================================================================
+     BOOT SEQUENCE
+     The mark is an order-2 Hilbert curve, so it can draw itself the
+     way Striate walks a file: cream cap at offset 0, trace to EOF,
+     sage cap lands, hand off to the form. Offsets tick in step.
+     ================================================================ */
+
+  .splash { display: none; }
+
+  .boot .splash {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+  }
+
+  .splash-inner { text-align: center; }
+
+  .splash-mark {
+    display: block;
+    width: 88px;
+    height: 88px;
+    margin: 0 auto 22px;
+  }
+
+  .boot .trace {
+    stroke-dasharray: 1000;
+    stroke-dashoffset: 1000;
+    animation: trace 1060ms var(--ease) 140ms forwards;
+  }
+  @keyframes trace { to { stroke-dashoffset: 0; } }
+
+  /* offset 0 is known immediately; EOF is only known once the walk ends */
+  .boot .cap-start { opacity: 0; animation: pop 200ms ease-out 140ms forwards; }
+  .boot .cap-end   { opacity: 0; animation: pop 260ms ease-out 1180ms forwards; }
+  @keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+
+  .splash-word {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.42em;
+    text-indent: 0.42em;
+    text-transform: uppercase;
+    color: var(--cream);
+  }
+  .boot .splash-word {
+    opacity: 0;
+    animation: rise 520ms var(--settle) 820ms forwards;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* Reads as progress, but in the tool's own units rather than a bar. */
+  .splash-offset {
+    margin: 12px 0 0;
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    color: var(--sage);
+    opacity: 0.7;
+    font-variant-numeric: tabular-nums;
+  }
+  .boot .splash-offset { opacity: 0; animation: pop 320ms ease-out 240ms forwards; }
+  .boot .splash-offset.is-lit { opacity: 0.7; animation: none; }
+
+  .splash.is-done { animation: splash-out 340ms ease-in forwards; }
+  @keyframes splash-out {
+    to { opacity: 0; transform: scale(1.045); }
+  }
+
+  /* ---- card ------------------------------------------------------- */
+
+  .card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55);
+  }
+
+  .boot .card { opacity: 0; }
+  .boot .card.is-in { animation: card-in 460ms var(--settle) forwards; }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* Signature: a section-entropy strip capping the card, the same
+     readout Striate draws over a loaded binary. It wipes in left to
+     right as the file is read, and shifts to accent on a failed sign-in. */
+  .entropy {
+    display: block;
+    width: 100%;
+    height: 10px;
+    color: var(--sage);
+    border-bottom: 1px solid var(--hair);
+  }
+  .card.is-error .entropy { color: var(--accent); }
+  @media (prefers-reduced-motion: no-preference) {
+    .entropy { transition: color 180ms ease-out; }
+  }
+
+  .boot .entropy { clip-path: inset(0 100% 0 0); }
+  .boot .card.is-in .entropy {
+    animation: wipe 620ms var(--settle) 240ms forwards;
+  }
+  @keyframes wipe { to { clip-path: inset(0 0 0 0); } }
+
+  .body { padding: 30px 30px 26px; }
+
+  /* ---- masthead --------------------------------------------------- */
+
+  .mast {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    margin-bottom: 30px;
+  }
+  .mast svg { display: block; width: 40px; height: 40px; flex: none; }
+
+  .wordmark {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.32em;
+    text-indent: 0.32em;
+    text-transform: uppercase;
+    color: var(--cream);
+  }
+  .tagline {
+    margin: 3px 0 0;
+    font-size: 10.5px;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    color: var(--sage);
+  }
+
+  /* ---- fields ----------------------------------------------------- */
+
+  .field { margin-bottom: 18px; }
+
+  label {
+    display: block;
+    margin-bottom: 7px;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--sage);
+  }
+
+  input {
+    width: 100%;
+    padding: 11px 13px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--cream);
+    background: var(--field);
+    border: 1px solid var(--hair);
+    border-radius: 5px;
+    outline: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    input { transition: border-color 140ms ease-out, box-shadow 140ms ease-out; }
+  }
+  input::placeholder { color: rgba(168, 164, 146, 0.45); }
+  input:hover { border-color: rgba(168, 164, 146, 0.4); }
+  input:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(236, 91, 56, 0.24);
+  }
+  input[aria-invalid="true"] { border-color: var(--accent); }
+
+  /* ---- error ------------------------------------------------------ */
+
+  .error {
+    display: flex;
+    gap: 8px;
+    min-height: 18px;              /* one line reserved, so the card never jumps */
+    margin: -2px 0 16px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--accent);
+  }
+  .error:empty { display: block; }
+  .error::before {
+    content: "!";
+    font-weight: 700;
+    opacity: 0.85;
+  }
+  .error:empty::before { content: none; }
+
+  /* ---- button ----------------------------------------------------- */
+
+  button {
+    width: 100%;
+    padding: 12px;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-indent: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    cursor: pointer;
+    outline: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    button { transition: filter 140ms ease-out; }
+  }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  button:active:not(:disabled) { filter: brightness(0.92); }
+  button:disabled { opacity: 0.55; cursor: default; }
+
+  button:focus-visible {
+    box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--cream);
+  }
+
+  /* ---- footer ----------------------------------------------------- */
+
+  .foot {
+    margin: 22px 0 0;
+    font-size: 10px;
+    letter-spacing: 0.11em;
+    text-align: center;
+    color: var(--sage);
+    opacity: 0.66;
+  }
+
+  @media (max-width: 400px) {
+    .body { padding: 24px 20px 22px; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Boot splash. Removed from the DOM once the sequence finishes;
+       never rendered at all under reduced motion or without JS. -->
+  <div class="splash" id="splash" aria-hidden="true">
+    <div class="splash-inner">
+      <svg class="splash-mark" viewBox="0 0 1024 1024" focusable="false">
+        <rect width="1024" height="1024" rx="208" fill="#524646"/>
+        <path class="trace"
+              d="M146 146 H390 V390 H146 V878 H390 V634 H634 V878 H878 V390 H634 V146 H878"
+              pathLength="1000"
+              fill="none" stroke="#EC5B38" stroke-width="128"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <circle class="cap-start" cx="146" cy="146" r="64" fill="#FCF2E5"/>
+        <circle class="cap-end"   cx="878" cy="146" r="64" fill="#A8A492"/>
+      </svg>
+      <p class="splash-word">Striate</p>
+      <p class="splash-offset" id="offset">0x00000000</p>
+    </div>
+  </div>
+
+  <main class="card" id="card">
+
+    <svg class="entropy" viewBox="0 0 560 28" preserveAspectRatio="none"
+         aria-hidden="true" focusable="false">
+      <g fill="currentColor">
+        <rect x="0" y="18" width="5.4" height="10" opacity="0.45"/>
+        <rect x="7" y="11" width="5.4" height="17" opacity="0.62"/>
+        <rect x="14" y="8" width="5.4" height="20" opacity="0.7"/>
+        <rect x="21" y="6" width="5.4" height="22" opacity="0.75"/>
+        <rect x="28" y="1" width="5.4" height="27" opacity="0.88"/>
+        <rect x="35" y="3" width="5.4" height="25" opacity="0.82"/>
+        <rect x="42" y="4" width="5.4" height="24" opacity="0.8"/>
+        <rect x="49" y="10" width="5.4" height="18" opacity="0.65"/>
+        <rect x="56" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="63" y="17" width="5.4" height="11" opacity="0.47"/>
+        <rect x="70" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="77" y="10" width="5.4" height="18" opacity="0.65"/>
+        <rect x="84" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="91" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="98" y="16" width="5.4" height="12" opacity="0.5"/>
+        <rect x="105" y="18" width="5.4" height="10" opacity="0.45"/>
+        <rect x="112" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="119" y="17" width="5.4" height="11" opacity="0.47"/>
+        <rect x="126" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="133" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="140" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="147" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="154" y="4" width="5.4" height="24" opacity="0.8"/>
+        <rect x="161" y="2" width="5.4" height="26" opacity="0.85"/>
+        <rect x="168" y="0" width="5.4" height="28" opacity="0.9"/>
+        <rect x="175" y="6" width="5.4" height="22" opacity="0.75"/>
+        <rect x="182" y="6" width="5.4" height="22" opacity="0.75"/>
+        <rect x="189" y="9" width="5.4" height="19" opacity="0.68"/>
+        <rect x="196" y="15" width="5.4" height="13" opacity="0.53"/>
+        <rect x="203" y="11" width="5.4" height="17" opacity="0.62"/>
+        <rect x="210" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="217" y="10" width="5.4" height="18" opacity="0.65"/>
+        <rect x="224" y="1" width="5.4" height="27" opacity="0.88"/>
+        <rect x="231" y="4" width="5.4" height="24" opacity="0.8"/>
+        <rect x="238" y="3" width="5.4" height="25" opacity="0.82"/>
+        <rect x="245" y="8" width="5.4" height="20" opacity="0.7"/>
+        <rect x="252" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="259" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="266" y="16" width="5.4" height="12" opacity="0.5"/>
+        <rect x="273" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="280" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="287" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="294" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="301" y="18" width="5.4" height="10" opacity="0.45"/>
+        <rect x="308" y="18" width="5.4" height="10" opacity="0.45"/>
+        <rect x="315" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="322" y="15" width="5.4" height="13" opacity="0.53"/>
+        <rect x="329" y="18" width="5.4" height="10" opacity="0.45"/>
+        <rect x="336" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="343" y="9" width="5.4" height="19" opacity="0.68"/>
+        <rect x="350" y="8" width="5.4" height="20" opacity="0.7"/>
+        <rect x="357" y="3" width="5.4" height="25" opacity="0.82"/>
+        <rect x="364" y="7" width="5.4" height="21" opacity="0.72"/>
+        <rect x="371" y="1" width="5.4" height="27" opacity="0.88"/>
+        <rect x="378" y="2" width="5.4" height="26" opacity="0.85"/>
+        <rect x="385" y="8" width="5.4" height="20" opacity="0.7"/>
+        <rect x="392" y="10" width="5.4" height="18" opacity="0.65"/>
+        <rect x="399" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="406" y="9" width="5.4" height="19" opacity="0.68"/>
+        <rect x="413" y="6" width="5.4" height="22" opacity="0.75"/>
+        <rect x="420" y="8" width="5.4" height="20" opacity="0.7"/>
+        <rect x="427" y="6" width="5.4" height="22" opacity="0.75"/>
+        <rect x="434" y="3" width="5.4" height="25" opacity="0.82"/>
+        <rect x="441" y="7" width="5.4" height="21" opacity="0.72"/>
+        <rect x="448" y="6" width="5.4" height="22" opacity="0.75"/>
+        <rect x="455" y="16" width="5.4" height="12" opacity="0.5"/>
+        <rect x="462" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="469" y="14" width="5.4" height="14" opacity="0.55"/>
+        <rect x="476" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="483" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="490" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="497" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="504" y="19" width="5.4" height="9" opacity="0.43"/>
+        <rect x="511" y="11" width="5.4" height="17" opacity="0.62"/>
+        <rect x="518" y="15" width="5.4" height="13" opacity="0.53"/>
+        <rect x="525" y="16" width="5.4" height="12" opacity="0.5"/>
+        <rect x="532" y="13" width="5.4" height="15" opacity="0.57"/>
+        <rect x="539" y="11" width="5.4" height="17" opacity="0.62"/>
+        <rect x="546" y="12" width="5.4" height="16" opacity="0.6"/>
+        <rect x="553" y="5" width="5.4" height="23" opacity="0.77"/>
+      </g>
+    </svg>
+
+    <div class="body">
+
+      <header class="mast">
+        <svg viewBox="0 0 1024 1024" role="img" aria-label="Striate">
+            <rect width="1024" height="1024" rx="208" fill="#524646"/>
+          <path d="M146 146 H390 V390 H146 V878 H390 V634 H634 V878 H878 V390 H634 V146 H878"
+                fill="none" stroke="#EC5B38" stroke-width="128"
+                stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="146" cy="146" r="64" fill="#FCF2E5"/>
+          <circle cx="878" cy="146" r="64" fill="#A8A492"/>
+        </svg>
+        <div>
+          <h1 class="wordmark">Striate</h1>
+          <p class="tagline">Binary triage</p>
+        </div>
+      </header>
+
+      <form id="signin" novalidate>
+
+        <div class="field">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text"
+                 autocomplete="username" autocapitalize="off"
+                 autocorrect="off" spellcheck="false" autofocus>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password"
+                 autocomplete="current-password">
+        </div>
+
+        <p class="error" id="error" role="alert"></p>
+
+        <button type="submit" id="submit">Sign in</button>
+
+      </form>
+
+      <p class="foot">binviz 0.1.0 &middot; local workspace</p>
+
+    </div>
+  </main>
+
+<script>
+  /* ------------------------------------------------------------------
+     Connect this to your backend.
+
+     Called with { username, password } once both fields are non-empty.
+     Resolve to sign the user in. Throw (or reject) to surface a message
+     in the error area -- the Error's `message` is shown verbatim, so
+     write it for the person reading it. Throw with an empty message to
+     fall back to the generic one.
+     ------------------------------------------------------------------ */
+  async function onSubmit(creds) {
+    console.log('onSubmit', creds);
+  }
+
+
+  /* --- boot sequence -------------------------------------------------
+     Set BOOT_MS to 0 to skip the splash while developing. Any click or
+     keypress also cuts it short, so it never gets in the way on a login
+     you use every day. -------------------------------------------------- */
+
+  const BOOT_MS = 1480;
+
+  const splash   = document.getElementById('splash');
+  const offsetEl = document.getElementById('offset');
+  const card     = document.getElementById('card');
+  const form     = document.getElementById('signin');
+  const username = document.getElementById('username');
+  const password = document.getElementById('password');
+  const errorBox = document.getElementById('error');
+  const submit   = document.getElementById('submit');
+
+  const EOF_OFFSET = 0x00400000;                    // 4 MiB, for show
+  const hex = n => '0x' + n.toString(16).toUpperCase().padStart(8, '0');
+
+  function boot() {
+    if (!document.documentElement.classList.contains('boot') || BOOT_MS <= 0) {
+      splash.remove();
+      card.classList.add('is-in');
+      return;
+    }
+
+    const TRACE_DELAY = 140, TRACE_MS = 1060;
+    const t0 = performance.now();
+    let raf = 0, timer = 0, finished = false;
+
+    // Offsets tick on the same curve the stroke is drawn with, so the
+    // number and the trace reach the end together.
+    const easeInOut = p => p < 0.5
+      ? 4 * p * p * p
+      : 1 - Math.pow(-2 * p + 2, 3) / 2;
+
+    (function tick(now) {
+      const p = Math.min(1, Math.max(0, ((now || t0) - t0 - TRACE_DELAY) / TRACE_MS));
+      offsetEl.textContent = hex(Math.round(easeInOut(p) * EOF_OFFSET));
+      if (p < 1 && !finished) raf = requestAnimationFrame(tick);
+      else offsetEl.classList.add('is-lit');
+    })(t0);
+
+    function reveal() {
+      if (finished) return;
+      finished = true;
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      window.removeEventListener('pointerdown', reveal);
+      window.removeEventListener('keydown', reveal);
+
+      offsetEl.textContent = hex(EOF_OFFSET);
+      offsetEl.classList.add('is-lit');
+      splash.classList.add('is-done');
+      card.classList.add('is-in');
+
+      setTimeout(() => { splash.remove(); username.focus(); }, 360);
+    }
+
+    timer = setTimeout(reveal, BOOT_MS);
+    window.addEventListener('pointerdown', reveal);
+    window.addEventListener('keydown', reveal);
+  }
+
+  boot();
+
+
+  /* --- form wiring: nothing below here should need changing ---------- */
+
+  const FALLBACK = 'Username or password is incorrect.';
+
+  function clearError() {
+    errorBox.textContent = '';
+    card.classList.remove('is-error');
+    username.removeAttribute('aria-invalid');
+    password.removeAttribute('aria-invalid');
+  }
+
+  function showError(message, focusEl) {
+    errorBox.textContent = message;
+    card.classList.add('is-error');
+    if (focusEl) {
+      focusEl.setAttribute('aria-invalid', 'true');
+      focusEl.focus();
+    }
+  }
+
+  // Typing again clears the previous failure.
+  [username, password].forEach(el => el.addEventListener('input', clearError));
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();      // Enter in either field lands here too
+    clearError();
+
+    const creds = {
+      username: username.value.trim(),
+      password: password.value
+    };
+
+    if (!creds.username) return showError('Enter your username.', username);
+    if (!creds.password) return showError('Enter your password.', password);
+
+    const label = submit.textContent;
+    submit.disabled = true;
+    submit.textContent = 'Signing in';
+
+    try {
+      await onSubmit(creds);
+    } catch (err) {
+      showError((err && err.message) || FALLBACK, password);
+      password.select();
+    } finally {
+      submit.disabled = false;
+      submit.textContent = label;
+    }
+  });
+</script>
+
+</body>
+</html>
