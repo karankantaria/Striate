@@ -313,6 +313,43 @@ export async function getCfg(id: string, va: number): Promise<CfgDoc> {
   return (await ok(await get(`/api/${id}/cfg/0x${va.toString(16)}`))).json();
 }
 
+/* ---------------------------------------------------- triage (Phase 11) */
+
+export type Verdict =
+  | "likely_packed" | "likely_benign_binary" | "non_executable"
+  | "corrupt" | "inconclusive";
+
+export interface TriageFinding {
+  severity: "high" | "medium" | "low";
+  code: string;
+  detail: string;
+  offsets: [number, number] | null;   // half-open file range when navigable
+  stride_bytes?: number;
+}
+
+export interface TriageDoc {
+  verdict: Verdict;
+  confidence: number;
+  findings: TriageFinding[];
+  format: string;
+  size: number;
+}
+
+export async function getTriage(id: string): Promise<TriageDoc> {
+  return (await ok(await get(`/api/${id}/triage`))).json();
+}
+
+/* ---------------------------------------- file navigation (Phase 11) */
+
+export interface FileEntry { name: string; path: string; size: number }
+
+export async function getFiles(
+  dir: string,
+): Promise<{ dir: string; files: FileEntry[] }> {
+  return (await ok(await get(
+    `/api/files?dir=${encodeURIComponent(dir)}`))).json();
+}
+
 export async function getBytes(
   id: string, off: number, len: number,
 ): Promise<{ data: Uint8Array; off: number }> {

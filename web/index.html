@@ -10,9 +10,13 @@
     <div id="app">
       <header id="toolbar">
         <span class="brand">binviz</span>
-        <input id="path-input" type="text" spellcheck="false"
+        <input id="path-input" type="text" spellcheck="false" list="recent-files"
                placeholder="absolute path to a binary… (or drop a file anywhere)" />
+        <datalist id="recent-files"></datalist>
         <button id="open-btn">Open</button>
+        <button id="nav-prev" title="previous file in directory ( [ )" disabled>‹</button>
+        <button id="nav-next" title="next file in directory ( ] )" disabled>›</button>
+        <span id="nav-pos" class="range-label muted" hidden></span>
         <span id="status-chip" class="chip" hidden></span>
         <span class="spacer"></span>
         <span id="file-label" class="file-label"></span>
@@ -57,7 +61,10 @@
 
         <aside id="side-pane" class="pane">
           <div class="pane-head"><h2 id="info-title">Binary</h2></div>
-          <div id="model-info" class="scroll"></div>
+          <div class="scroll">
+            <div id="triage-info"></div>
+            <div id="model-info"></div>
+          </div>
         </aside>
 
         <section id="hex-pane" class="pane">

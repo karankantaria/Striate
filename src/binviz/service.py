@@ -520,8 +520,10 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
 
     @app.get("/api/{id}/triage")
     def triage(id: str):
-        get_cache(id)
-        raise HTTPException(501, "triage verdict lands in Phase 11")
+        cache = get_cache(id)
+        require(cache, "triage")
+        return Response(cache.read_bytes("triage.json"),
+                        media_type="application/json")
 
     return app
 

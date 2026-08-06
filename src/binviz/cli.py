@@ -95,6 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     p_cfg.add_argument("--arch", help="arch override for raw/headerless input")
     p_cfg.add_argument("--no-heuristics", action="store_true")
 
+    p_triage = sub.add_parser("triage",
+                              help="synthesise the triage verdict")
+    p_triage.add_argument("file")
+    p_triage.add_argument("--json", action="store_true")
+    p_triage.add_argument("--arch", help="arch override for raw/headerless input")
+
     p_serve = sub.add_parser("serve", help="run the HTTP service")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -154,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_surface(args)
     if args.command == "stride":
         return _cmd_stride(args)
+    if args.command == "triage":
+        return _cmd_triage(args)
     if args.command == "serve":
         return _cmd_serve(args)
 
@@ -436,6 +444,39 @@ def _cmd_cfg(args) -> int:
         print(f"  ? {u['va']:#x}  {u['reason']}{hint}")
     if args.dot:
         print(f"\nwrote {args.dot} — render with: dot -Tpng {args.dot} -o cfg.png")
+    return 0
+
+
+def _cmd_triage(args) -> int:
+    from .disasm import recover
+    from .loader import MappedFile
+    from .parse import parse as parse_binary
+    from .triage import triage
+
+    model = parse_binary(args.file, arch=args.arch)
+    with MappedFile.open(args.file) as mf:
+        try:
+            functions = recover(mf.view, model).to_json()
+        except Exception as e:   # the verdict must survive recovery failure
+            print(f"binviz: function recovery failed ({e}); "
+                  f"triaging without it", file=sys.stderr)
+            functions = None
+        doc = triage(mf.view, model, functions)
+    if args.json:
+        json.dump(doc, sys.stdout, indent=2)
+        print()
+        return 0
+    print(f"{args.file}: {doc['verdict']}  "
+          f"(confidence {doc['confidence']:.2f}, {doc['format']}, "
+          f"{doc['size']} bytes)")
+    for f in doc["findings"]:
+        span = ""
+        if f.get("offsets"):
+            o = f["offsets"]
+            span = f"  [{o[0]:#x}..{o[1]:#x}]"
+        print(f"  {f['severity']:<6} {f['code']:<22} {f['detail']}{span}")
+    if not doc["findings"]:
+        print("  no findings")
     return 0
 
 

@@ -23,11 +23,11 @@ from pathlib import Path
 
 import numpy as np
 
-TOOL_VERSION = "0.0.1"
+TOOL_VERSION = "0.0.2"   # 0.0.2: triage artifact added (P11)
 SCHEMA = 1
 
 # analysis steps, in run order; meta.json tracks each one's readiness
-ARTIFACTS = ("model", "signals", "hist", "trigram", "functions")
+ARTIFACTS = ("model", "signals", "hist", "trigram", "functions", "triage")
 
 # int32 little-endian [x, y, z, count] per point, sorted by count
 # descending — a threshold query is then a prefix slice of the file
@@ -192,9 +192,11 @@ def analyze(cache: BinaryCache, source_path: str, *,
         step("trigram", lambda: _do_trigram(cache, mf.view))
         if model is not None:
             step("functions", lambda: _do_functions(cache, mf.view, model))
+            step("triage", lambda: _do_triage(cache, mf.view, model))
         else:
-            cache.mark_artifact("functions", "error: no model")
-            errors.append("functions: no model")
+            for name in ("functions", "triage"):
+                cache.mark_artifact(name, "error: no model")
+                errors.append(f"{name}: no model")
 
     state = "complete" if not errors else "error"
     return cache.update_meta(state=state,
@@ -249,3 +251,15 @@ def _do_functions(cache: BinaryCache, buf, model) -> None:
     cache.write_json("functions.json", program.to_json())
     for fn in program.functions:
         cache.write_json(f"cfg/{fn.va:x}.json", fn.to_json())
+
+
+def _do_triage(cache: BinaryCache, buf, model) -> None:
+    from .triage import triage
+
+    functions = None
+    if cache.exists("functions.json"):   # verdict survives recovery failure
+        try:
+            functions = cache.read_json("functions.json")
+        except (OSError, json.JSONDecodeError):
+            pass
+    cache.write_json("triage.json", triage(buf, model, functions))

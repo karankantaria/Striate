@@ -227,9 +227,14 @@ def test_files_listing(client):
                       params={"dir": OUT + "/nope"}).status_code == 404
 
 
-def test_triage_not_yet(hello, client):
+def test_triage_ready(hello, client):
     _, sha = hello
-    assert client.get(f"/api/{sha}/triage").status_code == 501
+    r = client.get(f"/api/{sha}/triage")
+    assert r.status_code == 200
+    doc = r.json()
+    assert doc["verdict"] in ("likely_packed", "likely_benign_binary",
+                              "non_executable", "corrupt", "inconclusive")
+    assert isinstance(doc["findings"], list)
 
 
 def test_unknown_and_malformed_ids(client):

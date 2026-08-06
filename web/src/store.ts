@@ -59,9 +59,13 @@ export class SelectionStore {
 
   setModel(model: BinaryModel | null): void {
     this.model = model;
+    // Selection state resets per file; the dtype is *view configuration*
+    // and survives file switches (P11) — flipping through 200 firmware
+    // blobs with a fixed u16le lens is the reference's real workflow.
+    const dtype = this.state.dtype;
     this.state = {
       offsetRange: null, vaRange: null, hoveredOffset: null, caret: null,
-      dtype: "u8", locate: null,
+      dtype, locate: null,
     };
   }
 

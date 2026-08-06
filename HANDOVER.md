@@ -4,7 +4,7 @@
 > the "how to run" section if it changed, and the gotchas list. `PLAN.md` is
 > the full design doc; this file is the fast on-ramp for a new session.
 
-## Status (updated 2026-08-06, end of Phase 10)
+## Status (updated 2026-08-06, end of Phase 11)
 
 | Phase | What | State |
 |---|---|---|
@@ -18,8 +18,9 @@
 | P7 | Web shell: Overall + Zoomed + Plot + SelectionStore + hex peek | ✅ done |
 | P8 | 2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate) | ✅ done |
 | P9 | Image view (stride suggester, 87 modes), dot plot (progressive), virtualised hex viewer | ✅ done |
-| **P10** | **CFG view (elk layout in workers, Canvas2D, uncertainty encoding, function list)** | ✅ **done (this session)** |
-| P11 | Triage verdict + file navigation | ⬜ next |
+| P10 | CFG view (elk layout in workers, Canvas2D, uncertainty encoding, function list) | ✅ done |
+| **P11** | **Triage verdict + clickable findings panel + file navigation** | ✅ **done (this session)** |
+| P12 | Scale hardening | trigger-driven, enter with a measured number |
 
 ## How to run
 
@@ -42,8 +43,8 @@ Open http://localhost:5173 and paste an absolute path (e.g.
 
 Tests:
 ```bash
-.venv/Scripts/python -m pytest -q         # backend, 287 passing (perf marked-out)
-cd web && npm test                        # 26 node --test units (hilbert/off↔va/colormap/transforms/hexutil)
+.venv/Scripts/python -m pytest -q         # backend, 300 passing (perf marked-out)
+cd web && npm test                        # 37 node --test units (hilbert/off↔va/colormap/transforms/hexutil/cfgutil)
 cd web && npm run build                   # tsc --noEmit (strict) + vite build
 ```
 
@@ -233,6 +234,56 @@ thunks showing the dashed "?" sentinel for `jmp [rip+…]`, hello_upx
 showing the packed banner with 7 explained stub functions, theme toggle
 clean, no console errors.
 
+## What Phase 11 built
+
+Backend (`src/binviz/triage.py`, tested in `tests/test_phase11.py`):
+- `triage(buf, model, functions, cal)` → the PLAN §P11 verdict document:
+  `{verdict, confidence, findings[], format, size}`, each finding
+  `{severity, code, detail, offsets}` with half-open file offsets where
+  navigable. Codes: HIGH_ENTROPY_EXEC / TRUNCATED (high, verdict-driving),
+  OVERLAY_PRESENT (high only when ≥20% of file AND ≥64 KiB — a 1 KiB tail
+  on a 4 KiB hello is alignment slack, not a payload), IMPORT_STARVED,
+  WX_REGION, ENTRY_OUTSIDE_EXEC, VSIZE_EXCEEDS_RAW (medium), SECTIONLESS,
+  LOW_FUNCTION_DENSITY, HIGH_ENTROPY_NONEXEC, EMBEDDED_IMAGE_LIKELY (low).
+- Region awareness is the FP guard: high entropy in *executable* regions
+  (≥50% of decision windows over `packed_h_min` from calibration.json) →
+  likely_packed; the same entropy in data regions → low-severity
+  HIGH_ENTROPY_NONEXEC that never tips the verdict (sample.zip test).
+- **TRUNCATED is read from the ELF header directly** (e_shoff +
+  shentsize·shnum > EOF): LIEF reparses a truncated ELF into a smaller
+  *self-consistent* model with no clamp warnings, so parse warnings alone
+  miss it.
+- EMBEDDED_IMAGE_LIKELY gates on the *max* suggest_stride peak score
+  ≥ 0.75 (rgb/bayer measure 0.84–1.0; ELF .rodata/.debug_* noise peaks at
+  0.6–0.7) + non-random entropy; reported stride is `cands[0]` which for
+  Bayer is the 2× row-pair lag (see gotcha in P9 notes).
+- `triage` is a cached artifact (ARTIFACTS grew; TOOL_VERSION bumped to
+  0.0.2 so every pre-P11 cache dir invalidates on next open). Endpoint
+  `GET /api/{id}/triage` serves triage.json (409 until ready). CLI:
+  `binviz triage <file> [--json]`.
+
+Frontend:
+- `src/views/triage.ts` — verdict banner (colour-coded) + findings list in
+  the side pane above model info. Clicking a finding with offsets does
+  `setSelection` + `setCaret` — every view follows; active finding
+  highlights when the selection matches it exactly.
+- File navigation (`main.ts`): prev/next buttons + `[` / `]` keys walk the
+  open file's directory via `GET /api/files` (position shown as `n/m`;
+  disabled for uploads), recent-files list (localStorage, max 10) feeds a
+  datalist on the path input, drag-drop unchanged.
+- View config persists across files AND reloads: `store.setModel` now
+  keeps `dtype` (selection state still resets — main.ts broadcasts
+  `setSelection/setCaret/setLocate(null)` after reset so no view keeps the
+  previous file's state), and overall layout/mode, bigram display, dtype
+  are saved to localStorage (`binviz-viewcfg`) and restored at boot by
+  dispatching change events after listeners are wired.
+
+Verified live: hello_upx LIKELY PACKED 0.81 with clickable
+HIGH_ENTROPY_EXEC driving zoomed/hex/bigram/trigram/dotplot; hello_O2
+LIKELY BENIGN 0.80; ramp16.bin nav'd to with `]` keeping u16le (bigram
+collapses to the diagonal on arrival); warm next/prev paint 126 ms
+(criterion < 500 ms); no console errors.
+
 ## Gotchas discovered this session (read before touching P9–P10)
 
 1. **Never let the browser HTTP-cache `/api`.** 404 and 410 are
@@ -298,15 +349,12 @@ clean, no console errors.
     `SelectionStore.dtype` — pixel formats (rgb8, bayer…) are a different
     axis than element dtypes; the mode picker is its own control.
 
-## Where P11 plugs in
+## Where P12 plugs in (trigger-driven — enter with a measured number)
 
-Every view P11's findings need to drive exists and follows the
-SelectionStore (a finding's `offsets` → `setSelection` + `setCaret` is the
-whole navigation story; the CFG additionally filters its function list to
-the selection). Backend: `triage.py` + `GET /api/{id}/triage` per the PLAN
-§P11 wire format, consuming the calibration + region entropy from P2 and
-`functions.json` stats from P5 (`packed` is already surfaced end-to-end).
-File navigation: `GET /api/files?dir=` already exists; view configuration
-that should persist across files lives in each view's controls — check
-`store.setModel` resets (it clears selection/dtype) before assuming
-persistence works.
+Every P12 item in PLAN §Phase 12 is an optimisation behind a measured
+threshold: >1 GiB files (chunked analysis), >50k-node call graph (WebGL),
+signal pyramid (only if refetch-on-zoom lags), sliding-window entropy
+(only if the 2 s target is missed), tiled dot-plot accumulators. None are
+currently triggered by the corpus. Remaining PLAN open questions: r2
+oracle backend shipping (decide from stripped recall), 3-D trigram vs
+three 2-D projections (decide from the plates).

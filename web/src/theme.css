@@ -176,6 +176,47 @@ select {
 .scroll { overflow: auto; flex: 1; min-height: 0; }
 
 #model-info { padding: 8px 10px; font-size: 12px; }
+
+/* triage panel (Phase 11) */
+#triage-info { padding: 8px 10px 0; font-size: 12px; }
+#triage-info:empty { display: none; }
+.triage-pending, .triage-none { padding: 2px 0 6px; font-size: 12px; }
+.triage-verdict {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 5px 8px; margin-bottom: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--grid);
+}
+.triage-verdict .v-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+.triage-verdict .v-conf { color: var(--ink-2); font-size: 11px; margin-left: auto; }
+.triage-verdict.v-likely_packed,
+.triage-verdict.v-corrupt { background: color-mix(in srgb, #d03b3b 16%, transparent); }
+.triage-verdict.v-likely_benign_binary { background: color-mix(in srgb, #1baf7a 14%, transparent); }
+.triage-verdict.v-inconclusive { background: color-mix(in srgb, #eb6834 14%, transparent); }
+.finding-row {
+  display: flex; gap: 6px; align-items: baseline;
+  padding: 3px 4px; border-radius: 4px; margin-bottom: 2px;
+}
+.finding-row.nav { cursor: pointer; }
+.finding-row.nav:hover { background: var(--grid); }
+.finding-row.active { background: var(--select-fill); }
+.finding-row .f-sev {
+  flex: none; width: 8px; height: 8px; border-radius: 50%;
+  position: relative; top: -1px;
+}
+.finding-row.sev-high .f-sev { background: #d03b3b; }
+.finding-row.sev-medium .f-sev { background: #eb6834; }
+.finding-row.sev-low .f-sev { background: var(--baseline); }
+.finding-row .f-body { min-width: 0; }
+.finding-row .f-code {
+  font: 11px ui-monospace, Consolas, monospace; font-weight: 600;
+}
+.finding-row .f-detail { color: var(--ink-2); }
+.finding-row .f-span {
+  display: block; color: var(--muted); font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
 #model-info table { border-collapse: collapse; width: 100%; }
 #model-info td { padding: 1px 6px 1px 0; vertical-align: top; }
 #model-info td:first-child { color: var(--muted); white-space: nowrap; }
