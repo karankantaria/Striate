@@ -1,4 +1,4 @@
-/* Keyboard shortcut help (SECURITY-UI-WORKORDER §3.6).
+/* Keyboard shortcut help (§3.6).
 
    The work order's complaint: the only two key bindings in the app were
    documented in a `title` tooltip on a button — which a keyboard user never

@@ -197,16 +197,33 @@ Supporting changes:
   file, so the frontend escaper is the only thing between that name and the
   DOM, and it should be tested as such.
 
+## The desktop window
+
+`binviz app` runs the same server in a native window. Two things about that
+are easy to get wrong, and both are handled deliberately:
+
+**A window does not remove the network listener.** It is still an ordinary
+TCP listener that any process or page on the machine can reach — and the user
+is now *less* likely to realise it, because there is no terminal and no tab.
+So the desktop build always authenticates: there is no `--no-auth` on
+`binviz app`, and it prints the URL it is serving on. The ephemeral default
+port is politeness about port clashes, not a control; a malicious page can
+scan localhost with timed `fetch`.
+
+**A `js_api` bridge would turn any surviving XSS into code execution.** Every
+public attribute of the object passed to pywebview is callable from any
+script running in that window, in a tool whose purpose is opening files an
+attacker chose. binviz exposes exactly one method, `pick_file()`, which takes
+no arguments, spawns nothing, and returns a path that goes back through the
+same `--root` confinement as a typed one. `tests/test_app.py` fails if a
+second method appears.
+
+If you extend the bridge, that test failing is the design working. The
+question to answer is not "is this useful" but "what does this let a hostile
+section name do".
+
 ## Not yet done
 
-Tracked in `SECURITY-UI-PROGRESS.md`. Every finding from the current review
-is now closed; what remains is hardening that has not been reviewed rather
-than known holes. In particular the desktop packaging work has its own
-requirements — if you are wrapping binviz in a webview, read the `js_api`
-notes in `SECURITY-UI-PROGRESS.md` before adding a bridge, because a bridge
-turns any surviving XSS into code execution.
-
-If you are packaging binviz into a desktop window, read
-`SECURITY-UI-PROGRESS.md` before adding a `js_api` bridge: a bridge turns any
-surviving XSS into arbitrary code execution, so it must not be built ahead of
-the items above.
+Every finding from the review that produced this document is closed. What
+remains is hardening that has not been reviewed rather than known holes; the
+known limitations are listed in `RELEASE.md` §8.

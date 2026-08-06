@@ -1,4 +1,4 @@
-# Publish to PyPI with Trusted Publishing (SECURITY-UI-WORKORDER §4.5).
+# Publish to PyPI with Trusted Publishing (§4.5).
 #
 # No API token exists anywhere: PyPI verifies a short-lived OIDC identity
 # minted by GitHub for this specific workflow in this specific repository.

@@ -1,4 +1,4 @@
-"""Security regression tests (SECURITY-UI-WORKORDER §1).
+"""Security regression tests (§1).
 
 These pin the second threat model: not "the binary is hostile" — the
 parsing layer already handles that — but "the browser is hostile", and

@@ -1,4 +1,4 @@
-/* Keyboard-navigable option lists (SECURITY-UI-WORKORDER §3.6).
+/* Keyboard-navigable option lists (§3.6).
 
    Three of this app's lists were mouse-only `<div>`s with a click listener:
    the triage findings, the region list, and the CFG function list. Not

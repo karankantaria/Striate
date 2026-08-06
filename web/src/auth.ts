@@ -1,4 +1,4 @@
-/* Session token for the API (SECURITY-UI-WORKORDER S1a).
+/* Session token for the API (S1a).
 
    The server mints a token at startup and prints it as a clickable URL.
    This module accepts it once from `?token=…`, moves it into sessionStorage,

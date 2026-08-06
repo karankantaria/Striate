@@ -1,4 +1,4 @@
-"""Desktop window and the js_api bridge (SECURITY-UI-WORKORDER §2.4).
+"""Desktop window and the js_api bridge (§2.4).
 
 §2.4 is not a bug report, it is a set of constraints on code that did not
 exist yet. Constraints like that erode silently — someone adds "just one

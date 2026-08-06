@@ -1,4 +1,4 @@
-"""Optional local sign-in (SECURITY-UI-WORKORDER §2.2, §2.3).
+"""Optional local sign-in (§2.2, §2.3).
 
 The thing these tests are really defending is §2.1: the login screen is not
 the security boundary. Every test that proves the form works is paired with

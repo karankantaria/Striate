@@ -1,7 +1,8 @@
-/* The sign-in screen (SECURITY-UI-WORKORDER §2.5, RELEASE.md §4).
+/* The sign-in screen (§2.5).
 
    Ported from `web/design/login.html`, which stays in the repo as the
-   design reference. What that reference establishes and this must keep:
+   design reference — it, not this file, is the spec for how the screen
+   looks. What it establishes and this must keep:
 
    - The boot sequence: the Hilbert mark draws itself the way Striate walks
      a file — cream cap pops at offset 0, the stroke traces, the sage cap

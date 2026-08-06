@@ -1,4 +1,4 @@
-"""Local sign-in credentials (SECURITY-UI-WORKORDER §2.2, §2.3).
+"""Local sign-in credentials (§2.2, §2.3).
 
 This is **not** an account system. There is no server to register with,
 nothing is transmitted anywhere, and the credential exists for exactly one

@@ -1,5 +1,5 @@
 /* A very small element builder, so `innerHTML` stops being the convenient
-   path (SECURITY-UI-WORKORDER §3.5).
+   path (§3.5).
 
    S2's root cause was not that someone wrote a bad escaper — it was that
    building HTML by string concatenation made escaping a thing you had to

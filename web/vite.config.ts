@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 // Override with BINVIZ_API=http://host:port when running `npm run dev`.
 const target = process.env.BINVIZ_API ?? "http://127.0.0.1:8000";
 
-// The API requires a token (SECURITY-UI-WORKORDER S1a). Two ways to supply
+// The API requires a token (S1a). Two ways to supply
 // it in dev, both of which work:
 //
 //   BINVIZ_TOKEN=… npm run dev     — the proxy attaches it, browser unaware

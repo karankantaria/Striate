@@ -1,4 +1,4 @@
-"""Desktop window (`binviz app`) — RELEASE.md §2, SECURITY-UI-WORKORDER §2.4.
+"""Desktop window (`binviz app`) — RELEASE.md §2, §2.4.
 
 The app is the existing FastAPI service plus the packaged frontend in one
 process, with a native window pointed at it. Read §2.4 before changing

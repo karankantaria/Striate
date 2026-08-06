@@ -1,4 +1,4 @@
-/* Client-side routing (SECURITY-UI-WORKORDER §3.4).
+/* Client-side routing (§3.4).
 
    Deliberately built once, generally, rather than as a workspace switcher:
    §2.5 needs `/login` as a screen of its own, and retrofitting a second
