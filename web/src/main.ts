@@ -142,7 +142,13 @@ async function poll(): Promise<void> {
   } else if (st.state === "error") {
     setStatus(`analysis error: ${st.error ?? "?"}`, true);
   } else {
-    setStatus(`analyzing ${readyCount}/${total}…`);
+    // name the running step, with its fractional progress on large files
+    const running = Object.entries(arts).find(([, v]) => v === "running")?.[0];
+    const frac = running ? st.progress?.[running] : undefined;
+    const detail = running
+      ? ` · ${running}${frac !== undefined ? ` ${Math.floor(frac * 100)}%` : ""}`
+      : "";
+    setStatus(`analyzing ${readyCount}/${total}${detail}…`);
     pollTimer = window.setTimeout(poll, 500);
   }
 }

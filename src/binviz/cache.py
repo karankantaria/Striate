@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-TOOL_VERSION = "0.0.2"   # 0.0.2: triage artifact added (P11)
+TOOL_VERSION = "0.0.3"   # 0.0.3: trigram artifact cap + sidecar meta (P12)
 SCHEMA = 1
 
 # analysis steps, in run order; meta.json tracks each one's readiness
@@ -32,6 +32,12 @@ ARTIFACTS = ("model", "signals", "hist", "trigram", "functions", "triage")
 # int32 little-endian [x, y, z, count] per point, sorted by count
 # descending — a threshold query is then a prefix slice of the file
 TRIGRAM_DTYPE = "<i4"
+
+# stored trigram points are capped (count-descending, so the cap keeps the
+# densest): a 2 GiB mixed file measured 256 MiB of trigram.sparse, and the
+# UI never requests more than 1M points. trigram.meta.json records the true
+# total and whether the artifact is capped.
+TRIGRAM_STORE_MAX_POINTS = 1 << 22   # 4.2M points = 64 MiB on disk
 
 
 def default_root() -> Path:
@@ -112,6 +118,11 @@ class BinaryCache:
         meta.setdefault("artifacts", {})[name] = state
         self.write_json("meta.json", meta)
 
+    def mark_progress(self, name: str, frac: float) -> None:
+        meta = self.meta() or {}
+        meta.setdefault("progress", {})[name] = round(float(frac), 3)
+        self.write_json("meta.json", meta)
+
     def wipe(self) -> None:
         if self.dir.exists():
             shutil.rmtree(self.dir)
@@ -140,6 +151,26 @@ def is_ready(cache: BinaryCache) -> bool:
 
 # ---------------------------------------------------------------- analysis
 
+class StepProgress:
+    """Throttled per-artifact progress: meta.json gets `progress.<name>` at
+    most every `interval` seconds (plus always at 1.0). Long steps on large
+    files run for minutes; without this the status endpoint can only say
+    "running" (P12)."""
+
+    def __init__(self, cache: BinaryCache, name: str,
+                 interval: float = 0.5):
+        self.cache = cache
+        self.name = name
+        self.interval = interval
+        self._last = 0.0
+
+    def __call__(self, frac: float) -> None:
+        now = time.monotonic()
+        if frac >= 1.0 or now - self._last >= self.interval:
+            self._last = now
+            self.cache.mark_progress(self.name, frac)
+
+
 def analyze(cache: BinaryCache, source_path: str, *,
             stored: bool = False) -> dict:
     """Run every analysis step and populate the cache directory.
@@ -160,6 +191,7 @@ def analyze(cache: BinaryCache, source_path: str, *,
         source={"path": os.path.abspath(source_path), "stored": stored},
         state="running", error=None,
         artifacts={a: "pending" for a in ARTIFACTS},
+        progress={},
     )
 
     errors: list[str] = []
@@ -187,12 +219,16 @@ def analyze(cache: BinaryCache, source_path: str, *,
     # mf.view is taken fresh inside each step call so no memoryview of the
     # mmap outlives its step (mmap.close refuses while exports exist)
     with MappedFile.open(source_path) as mf:
-        step("signals", lambda: _do_signals(cache, mf.view))
-        step("hist", lambda: _do_hist(cache, mf.view))
-        step("trigram", lambda: _do_trigram(cache, mf.view))
+        step("signals", lambda: _do_signals(
+            cache, mf.view, StepProgress(cache, "signals")))
+        step("hist", lambda: _do_hist(
+            cache, mf.view, StepProgress(cache, "hist")))
+        step("trigram", lambda: _do_trigram(
+            cache, mf.view, StepProgress(cache, "trigram")))
         if model is not None:
             step("functions", lambda: _do_functions(cache, mf.view, model))
-            step("triage", lambda: _do_triage(cache, mf.view, model))
+            step("triage", lambda: _do_triage(
+                cache, mf.view, model, StepProgress(cache, "triage")))
         else:
             for name in ("functions", "triage"):
                 cache.mark_artifact(name, "error: no model")
@@ -203,30 +239,42 @@ def analyze(cache: BinaryCache, source_path: str, *,
                              error="; ".join(errors) if errors else None)
 
 
-def _do_signals(cache: BinaryCache, buf) -> None:
+def _do_signals(cache: BinaryCache, buf, progress=None) -> None:
     from .signals import compute_signals
 
-    for name, sig in compute_signals(buf).items():
+    for name, sig in compute_signals(buf, progress=progress).items():
         cache.write_bytes(f"signals/{name}.f32",
                           sig.values.astype("<f4").tobytes())
         cache.write_bytes(f"signals/{name}.i64",
                           sig.offsets.astype("<i8").tobytes())
 
 
-def _do_hist(cache: BinaryCache, buf) -> None:
+def _do_hist(cache: BinaryCache, buf, progress=None) -> None:
     from .stats import ngram
 
     a = np.frombuffer(buf, dtype=np.uint8)
     cache.write_bytes("hist/1_u8.bin", ngram(a, 1).astype("<u4").tobytes())
-    cache.write_bytes("hist/2_u8.bin", ngram(a, 2).astype("<u4").tobytes())
+    cache.write_bytes("hist/2_u8.bin",
+                      ngram(a, 2, progress).astype("<u4").tobytes())
 
 
-def _do_trigram(cache: BinaryCache, buf) -> None:
+def _do_trigram(cache: BinaryCache, buf, progress=None) -> None:
     from .stats import ngram
 
     a = np.frombuffer(buf, dtype=np.uint8)
-    coords, counts = ngram(a, 3)
-    cache.write_bytes("trigram.sparse", pack_trigram(coords, counts))
+    coords, counts = ngram(a, 3, progress)
+    total = int(len(counts))
+    payload = pack_trigram(coords, counts)
+    capped = total > TRIGRAM_STORE_MAX_POINTS
+    if capped:
+        # count-descending, so the prefix keeps the densest points
+        payload = payload[: TRIGRAM_STORE_MAX_POINTS * 16]
+    cache.write_bytes("trigram.sparse", payload)
+    cache.write_json("trigram.meta.json", {
+        "total_points": total,
+        "stored_points": min(total, TRIGRAM_STORE_MAX_POINTS),
+        "capped": capped,
+    })
 
 
 def pack_trigram(coords: np.ndarray, counts: np.ndarray) -> bytes:
@@ -253,7 +301,7 @@ def _do_functions(cache: BinaryCache, buf, model) -> None:
         cache.write_json(f"cfg/{fn.va:x}.json", fn.to_json())
 
 
-def _do_triage(cache: BinaryCache, buf, model) -> None:
+def _do_triage(cache: BinaryCache, buf, model, progress=None) -> None:
     from .triage import triage
 
     functions = None
@@ -262,4 +310,5 @@ def _do_triage(cache: BinaryCache, buf, model) -> None:
             functions = cache.read_json("functions.json")
         except (OSError, json.JSONDecodeError):
             pass
-    cache.write_json("triage.json", triage(buf, model, functions))
+    cache.write_json("triage.json",
+                     triage(buf, model, functions, progress=progress))

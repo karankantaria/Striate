@@ -41,6 +41,10 @@ interface DotMeta {
   lit_cells?: number;
   max_cell?: number;
   warnings?: string[];
+  tiled?: boolean;          // huge axis 2: range streamed in tiles (P12)
+  tiles?: number;
+  tiles_done?: number;
+  rows_sampled?: number;    // huge axis 1: fixed random row subset (P12)
 }
 
 export class DotPlotView {
@@ -194,6 +198,10 @@ export class DotPlotView {
     } else if (m.mode === "sampled") {
       const pct = Math.floor((m.progress ?? 0) * 100);
       parts.push(`sampled ${pct}%`);
+      if (m.tiled) parts.push(`tile ${m.tiles_done ?? 0}/${m.tiles ?? 0}`);
+      if (m.rows_sampled !== undefined) {
+        parts.push(`${m.rows_sampled.toLocaleString()} rows sampled`);
+      }
       parts.push(`${(m.hits ?? 0).toLocaleString()} hits`);
       if ((m.progress ?? 1) < 1) {
         parts.push(this.c.run.checked && this.passes < MAX_PASSES

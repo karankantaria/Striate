@@ -55,7 +55,40 @@ def _fmt_size(n: int) -> str:
     return f"{n} B"
 
 
-def _region_entropy(buf, r: Region) -> dict | None:
+class _Ticker:
+    """Byte-weighted progress over the region scans: a 2 GiB overlay region
+    dominates triage wall time (measured 14.3 s — P12), so progress must be
+    fractional *within* a region, not per-region."""
+
+    def __init__(self, total_bytes: int, progress):
+        self.total = max(1, total_bytes)
+        self.done = 0
+        self.progress = progress
+
+    def sub(self, nbytes: int):
+        if self.progress is None:
+            return None
+        base, p, total = self.done, self.progress, self.total
+        return lambda f: p(min(1.0, (base + f * nbytes) / total))
+
+    def tick(self, nbytes: int) -> None:
+        self.done = min(self.total, self.done + nbytes)
+        if self.progress is not None:
+            self.progress(self.done / self.total)
+
+
+def _ent_eligible(r: Region) -> bool:
+    return (r.file_off >= 0 and r.kind != "header"
+            and r.file_size >= MIN_ENTROPY_REGION
+            and ("x" in r.perms or r.file_size >= MIN_NONEXEC_REGION))
+
+
+def _img_eligible(r: Region) -> bool:
+    return (r.file_off >= 0 and "x" not in r.perms and r.kind != "header"
+            and r.file_size >= MIN_IMAGE_REGION)
+
+
+def _region_entropy(buf, r: Region, progress=None) -> dict | None:
     """Decision-window entropy stats for a file-backed region.
 
     Regions shorter than the decision window fall back to one whole-
@@ -66,7 +99,8 @@ def _region_entropy(buf, r: Region) -> dict | None:
         return None
     chunk = buf[r.file_off:r.file_off + r.file_size]
     window = min(DECISION_WINDOW, len(chunk))
-    values = window_stats(chunk, window, window, which=("entropy",))["entropy"]
+    values = window_stats(chunk, window, window, which=("entropy",),
+                          progress=progress)["entropy"]
     if not len(values):
         return None
     return {
@@ -78,17 +112,19 @@ def _region_entropy(buf, r: Region) -> dict | None:
     }
 
 
-def _entropy_findings(buf, model: BinaryModel, thresholds: dict) -> list[dict]:
+def _entropy_findings(buf, model: BinaryModel, thresholds: dict,
+                      ticker: _Ticker | None = None) -> list[dict]:
     """HIGH_ENTROPY_EXEC (high) and HIGH_ENTROPY_NONEXEC (low)."""
     out: list[dict] = []
     thr = thresholds["packed_h_min"]
     for r in model.regions:
-        if r.file_off < 0 or r.kind == "header":
+        if not _ent_eligible(r):
             continue
         executable = "x" in r.perms
-        if not executable and r.file_size < MIN_NONEXEC_REGION:
-            continue
-        st = _region_entropy(buf, r)
+        st = _region_entropy(buf, r,
+                             ticker.sub(r.file_size) if ticker else None)
+        if ticker:
+            ticker.tick(r.file_size)
         if st is None:
             continue
         values = st["values"]
@@ -116,18 +152,21 @@ def _entropy_findings(buf, model: BinaryModel, thresholds: dict) -> list[dict]:
     return out
 
 
-def _image_findings(buf, model: BinaryModel, thresholds: dict) -> list[dict]:
+def _image_findings(buf, model: BinaryModel, thresholds: dict,
+                    ticker: _Ticker | None = None) -> list[dict]:
     """EMBEDDED_IMAGE_LIKELY: a strong autocorrelation stride over a
     structured (non-random) range reads as raw pixel rows (§5.7)."""
     from .surfaces.image import suggest_stride
 
     out: list[dict] = []
     for r in model.regions:
-        if (r.file_off < 0 or "x" in r.perms or r.kind == "header"
-                or r.file_size < MIN_IMAGE_REGION):
+        if not _img_eligible(r):
             continue
         chunk = buf[r.file_off:r.file_off + r.file_size]
-        st = _region_entropy(buf, r)
+        st = _region_entropy(buf, r,
+                             ticker.sub(r.file_size) if ticker else None)
+        if ticker:
+            ticker.tick(r.file_size)
         if st is None or st["mean"] >= thresholds["random_h_min"]:
             continue   # compressed/random data autocorrelates with nothing
         cands = suggest_stride(chunk)
@@ -261,22 +300,30 @@ def _function_findings(model: BinaryModel,
 
 
 def triage(buf, model: BinaryModel, functions: dict | None = None,
-           cal: dict | None = None) -> dict:
+           cal: dict | None = None, progress=None) -> dict:
     """Synthesise the verdict document (PLAN §P11 wire format).
 
     `functions` is the P5 program index (functions.json) or None when
-    recovery failed — the verdict must still be produced.
+    recovery failed — the verdict must still be produced. `progress`, when
+    given, is called with a fraction in (0, 1] weighted by region bytes.
     """
     thresholds = (cal or load_calibration())["derived"]
 
+    total_bytes = (sum(r.file_size for r in model.regions if _ent_eligible(r))
+                   + sum(r.file_size for r in model.regions
+                         if _img_eligible(r)))
+    ticker = _Ticker(total_bytes, progress)
+
     findings: list[dict] = []
-    findings += _entropy_findings(buf, model, thresholds)
+    findings += _entropy_findings(buf, model, thresholds, ticker)
     findings += _structure_findings(model)
     trunc = _elf_truncation(buf, model)
     if trunc and not any(f["code"] == "TRUNCATED" for f in findings):
         findings.append(trunc)
     findings += _function_findings(model, functions)
-    findings += _image_findings(buf, model, thresholds)
+    findings += _image_findings(buf, model, thresholds, ticker)
+    if progress is not None:
+        progress(1.0)
     findings.sort(key=lambda f: (_SEV_ORDER[f["severity"]], f["code"]))
 
     codes = {f["code"] for f in findings}
