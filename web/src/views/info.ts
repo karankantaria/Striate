@@ -3,6 +3,7 @@
    follows). */
 
 import type { BinaryModel } from "../api.ts";
+import { esc } from "../escape.ts";
 import { fmtHex, fmtSize, type SelectionStore } from "../store.ts";
 
 export class InfoPanel {
@@ -71,8 +72,4 @@ export class InfoPanel {
       row.classList.toggle("active", active);
     });
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 }

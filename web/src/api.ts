@@ -2,6 +2,8 @@
    Bulk numeric payloads are raw little-endian typed arrays; metadata rides
    in the X-Meta response header as JSON. */
 
+import { authHeaders } from "./auth.ts";
+
 export interface Region {
   name: string;
   kind: "section" | "segment" | "header" | "overlay" | "gap";
@@ -66,9 +68,10 @@ export interface ScalarRaster {
 
 /** All API GETs bypass the browser HTTP cache: analysis state changes
     under the same URL, and a cached mid-analysis error (404/410 are
-    heuristically cacheable) would wedge the view forever. */
+    heuristically cacheable) would wedge the view forever. Every request
+    also carries the session token — see auth.ts. */
 function get(url: string): Promise<Response> {
-  return fetch(url, { cache: "no-store" });
+  return fetch(url, { cache: "no-store", headers: authHeaders() });
 }
 
 async function ok(r: Response): Promise<Response> {
@@ -78,6 +81,12 @@ async function ok(r: Response): Promise<Response> {
       const doc = await r.json();
       if (doc && typeof doc.detail === "string") detail = doc.detail;
     } catch { /* body wasn't JSON */ }
+    if (r.status === 401) {
+      // Worth spelling out: the natural guess is "the file is bad", and
+      // the actual fix is somewhere else entirely.
+      detail = "not authorised — reopen the URL that `binviz serve` " +
+        "printed, or set BINVIZ_TOKEN before `npm run dev`";
+    }
     const err = new Error(detail) as Error & { status: number };
     err.status = r.status;
     throw err;
@@ -92,7 +101,7 @@ function xmeta<T>(r: Response): T {
 export async function openPath(path: string): Promise<{ id: string; state: string }> {
   const r = await ok(await fetch("/api/open", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ path }),
   }));
   return r.json();
@@ -101,7 +110,7 @@ export async function openPath(path: string): Promise<{ id: string; state: strin
 export async function openUpload(data: ArrayBuffer): Promise<{ id: string; state: string }> {
   const r = await ok(await fetch("/api/open", {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
+    headers: authHeaders({ "Content-Type": "application/octet-stream" }),
     body: data,
   }));
   return r.json();
@@ -245,7 +254,7 @@ export async function postLocate(
 ): Promise<{ density: Uint32Array; meta: LocateMeta }> {
   const r = await ok(await fetch(`/api/${id}/hist/locate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ ...rect, ...opts }),
     cache: "no-store",
   }));

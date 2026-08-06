@@ -12,9 +12,8 @@ import time
 
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
-from binviz.service import create_app
+from conftest import authed_client, make_app
 
 SIZE = 32 * 1024 * 1024      # windows >> bins so naive aggregation would
 N_BINS = 500                 # average the spike away (8192 windows -> 500)
@@ -38,8 +37,8 @@ def spiked(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    app = create_app(tmp_path_factory.mktemp("p7cache"))
-    with TestClient(app) as c:
+    app = make_app(tmp_path_factory.mktemp("p7cache"))
+    with authed_client(app) as c:
         yield c
 
 

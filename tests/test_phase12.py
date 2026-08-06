@@ -26,17 +26,15 @@ import tracemalloc
 
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
 import binviz.cache as cache_mod
 import binviz.stats as stats
 import binviz.surfaces.dotplot as dot
 from binviz.cache import BinaryCache, analyze
 from binviz.loader import sha256_file
-from binviz.service import create_app
 from binviz.stats import histogram, ngram, window_stats
 
-from conftest import require_sample
+from conftest import authed_client, make_app, require_sample
 
 
 # ------------------------------------------------------------- histogram
@@ -177,8 +175,8 @@ def test_trigram_artifact_cap(tmp_path, monkeypatch, manifest):
 def test_hist3_reports_artifact_cap(tmp_path_factory, monkeypatch, manifest):
     monkeypatch.setattr(cache_mod, "TRIGRAM_STORE_MAX_POINTS", 100)
     path = require_sample("urandom.bin", manifest)
-    app = create_app(tmp_path_factory.mktemp("p12cache"))
-    with TestClient(app) as client:
+    app = make_app(tmp_path_factory.mktemp("p12cache"))
+    with authed_client(app) as client:
         r = client.post("/api/open", json={"path": path})
         sha = r.json()["id"]
         deadline = time.time() + 300
@@ -292,8 +290,8 @@ def test_upload_streams_to_disk(tmp_path_factory):
         0, 256, 4 * 1024 * 1024, dtype=np.uint8).tobytes()
     import hashlib
 
-    app = create_app(tmp_path_factory.mktemp("p12up"))
-    with TestClient(app) as client:
+    app = make_app(tmp_path_factory.mktemp("p12up"))
+    with authed_client(app) as client:
         r = client.post("/api/open", content=payload,
                         headers={"content-type": "application/octet-stream"})
         assert r.status_code == 200, r.text

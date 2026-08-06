@@ -4,6 +4,7 @@
    (the report is how you *get to* the evidence, per PLAN §P11). */
 
 import type { TriageDoc, TriageFinding, Verdict } from "../api.ts";
+import { esc } from "../escape.ts";
 import { fmtHex, type SelectionStore } from "../store.ts";
 
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -76,8 +77,4 @@ export class TriagePanel {
       row.classList.toggle("active", active);
     });
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 }

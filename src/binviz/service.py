@@ -16,15 +16,19 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 import tempfile
 import threading
 import time
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import cache as cache_mod
 from .cache import ARTIFACTS, TOOL_VERSION, TRIGRAM_DTYPE, BinaryCache, is_ready
@@ -34,6 +38,80 @@ MAX_BYTES_READ = 1 << 20        # /bytes hard cap
 DEFAULT_SIGNAL_BINS = 2000
 DOTPLOT_LRU = 16                # in-memory progressive accumulators
 DOTPLOT_ACC_VERSION = 2         # 2: int64 weighted pair-count matrix (P12)
+
+#: Upload ceiling (S5). Generous on purpose: P12 measured analysis against a
+#: 2 GiB file and uploads stream to disk rather than into RAM, so the cap is
+#: here to stop a runaway from filling the disk, not to define "a big file".
+#: Override with --max-upload or BINVIZ_MAX_UPLOAD (bytes).
+DEFAULT_MAX_UPLOAD = 8 << 30    # 8 GiB
+
+#: Simultaneous analyses (S7). Each one is CPU- and memory-hungry — the P12
+#: numbers show a single 2 GiB analysis transiently committing several GiB —
+#: so the useful number is small. Beyond this, /api/open returns 503 rather
+#: than quietly adding another thread.
+DEFAULT_MAX_ANALYSES = 4
+
+# --------------------------------------------------------------- security
+#
+# The threat model here is not "someone on the network" — it is "a web page
+# in another tab". Binding to loopback stops network peers; it does nothing
+# about JavaScript running on this machine, which reaches 127.0.0.1 exactly
+# like any other origin. So the API authenticates every caller.
+
+TOKEN_HEADER = "X-Binviz-Token"
+TOKEN_BYTES = 32                # secrets.token_urlsafe entropy, not length
+
+#: Where the dev frontend runs. `npm run dev` proxies /api to us, so in the
+#: normal case there is no cross-origin request at all; this list exists for
+#: the direct-to-:8000 path. Override with BINVIZ_ORIGINS (comma-separated).
+DEFAULT_ORIGINS = (
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+)
+
+#: The anti-DNS-rebinding control. In a rebinding attack the attacker's own
+#: domain re-resolves to 127.0.0.1; the browser then considers the request
+#: same-origin and CORS stops applying entirely. Checking Host is what
+#: catches that, because the Host header still says `evil.com`.
+DEFAULT_HOSTS = ("127.0.0.1", "localhost")
+
+
+def _extract_token(request: Request) -> str | None:
+    """Bearer header, dedicated header, or `?token=` (in that order).
+
+    The query parameter exists only so a printed startup URL can bootstrap
+    a browser session; it is the worst of the three because query strings
+    land in access logs and `Referer`. The frontend swaps it for a header
+    on first load and strips it from the address bar.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip()
+    header = request.headers.get(TOKEN_HEADER)
+    if header:
+        return header
+    return request.query_params.get("token")
+
+
+def _token_ok(supplied: str | None, expected: str) -> bool:
+    if not supplied:
+        return False
+    # compare_digest, never ==: a short-circuiting comparison leaks the
+    # length of the shared prefix through timing, which is enough to
+    # reconstruct a token one character at a time.
+    return secrets.compare_digest(supplied.encode("utf-8", "replace"),
+                                  expected.encode("utf-8"))
+
+
+def _within(target: str, base: str) -> bool:
+    """Is `target` inside `base`? Both must already be realpath'd."""
+    t, b = os.path.normcase(target), os.path.normcase(base)
+    if t == b:
+        return True
+    try:
+        return os.path.commonpath([t, b]) == b
+    except ValueError:
+        return False            # different drives on Windows
 
 
 # --------------------------------------------------------------- helpers
@@ -70,12 +148,41 @@ def _jsonable(v):
 
 
 class _Jobs:
-    """In-process analysis futures keyed by sha256, so a concurrent open
-    of the same file never analyses twice."""
+    """In-process analysis jobs keyed by sha256, so a concurrent open
+    of the same file never analyses twice.
 
-    def __init__(self):
+    Bounded (S7). Deduplication only ever covered the *same* hash, so N
+    distinct files meant N threads, each one happy to commit gigabytes.
+    Past `max_concurrent`, `ensure` raises 503 instead of adding another.
+
+    Why daemon threads and not a ThreadPoolExecutor, which is what the work
+    order suggests: since 3.9 the executor's workers are non-daemon and are
+    joined by an atexit hook, so Ctrl+C on `binviz serve` would block until
+    the running analysis finished — up to ~90 s on a 2 GiB file. The bound
+    is what S7 actually asks for, and a counted set of daemon threads gives
+    that without regressing shutdown.
+    """
+
+    def __init__(self, max_concurrent: int = DEFAULT_MAX_ANALYSES,
+                 on_finished=None):
         self._lock = threading.Lock()
         self._threads: dict[str, threading.Thread] = {}
+        self._max_concurrent = max(1, max_concurrent)
+        self._on_finished = on_finished
+
+    def active(self) -> set[str]:
+        """sha256s with an analysis in flight — never evict these (S6)."""
+        with self._lock:
+            return {s for s, t in self._threads.items() if t.is_alive()}
+
+    def running(self) -> int:
+        with self._lock:
+            self._reap()
+            return len(self._threads)
+
+    def _reap(self) -> None:
+        """Drop finished threads. Callers must hold the lock."""
+        self._threads = {s: t for s, t in self._threads.items() if t.is_alive()}
 
     def ensure(self, sha: str, source: str, root, *, stored: bool) -> str:
         with self._lock:
@@ -90,6 +197,13 @@ class _Jobs:
                     "params_fingerprint") != cache_mod.params_fingerprint():
                 cache.wipe()   # stale parameters: rebuild from scratch
 
+            self._reap()
+            if len(self._threads) >= self._max_concurrent:
+                raise HTTPException(
+                    503, f"{len(self._threads)} analyses already running "
+                         f"(limit {self._max_concurrent}); retry shortly",
+                    headers={"Retry-After": "5"})
+
             def run():
                 try:
                     cache_mod.analyze(cache, source, stored=stored)
@@ -98,6 +212,15 @@ class _Jobs:
                         cache.update_meta(state="error", error=str(e))
                     except OSError:
                         pass
+                finally:
+                    # sweep after the work, not before: the entry we just
+                    # built is the one most worth keeping, and it is now the
+                    # most recently touched
+                    if self._on_finished is not None:
+                        try:
+                            self._on_finished()
+                        except Exception:
+                            pass         # eviction must never fail an open
 
             t = threading.Thread(target=run, daemon=True,
                                  name=f"binviz-analyze-{sha[:12]}")
@@ -167,11 +290,62 @@ def _dotplot_key(req) -> str:
 
 # ------------------------------------------------------------------- app
 
-def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
-    app = FastAPI(title="binviz", version=TOOL_VERSION)
-    app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
-        allow_headers=["*"], expose_headers=["X-Meta"])
+def create_app(cache_root: str | os.PathLike | None = None, *,
+               auth: bool = True, token: str | None = None,
+               file_root: str | os.PathLike | None = None,
+               allowed_origins: list[str] | None = None,
+               allowed_hosts: list[str] | None = None,
+               max_upload: int | None = None,
+               max_analyses: int | None = None,
+               max_cache: int | None = None) -> FastAPI:
+    """Build the app.
+
+    `auth=False` disables the token entirely. It exists for CI and for the
+    test suite's own negative cases; it is never a reasonable way to run
+    the server, and the CLI makes you type `--no-auth` and prints a banner.
+
+    `file_root` confines `/api/open` and `/api/files` to one subtree. It
+    defaults to None (unconfined) because this function is also the library
+    entry point and the tests open samples from the corpus and from pytest
+    temp directories, which live on different volumes. The CLI defaults it
+    to the working directory, so the *shipped* server is confined.
+    """
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # A cache that grew past the budget while the server was down is
+        # exactly the case a startup sweep is for. Never fatal: a tool that
+        # refuses to start because it could not delete something is worse
+        # than one running slightly over budget.
+        try:
+            _app.state.sweep_cache()
+        except Exception:
+            pass
+        yield
+
+    app = FastAPI(title="binviz", version=TOOL_VERSION, lifespan=lifespan)
+
+    app.state.auth_token = (token or secrets.token_urlsafe(TOKEN_BYTES)) \
+        if auth else None
+    app.state.file_root = (os.path.realpath(file_root)
+                           if file_root is not None else None)
+
+    # Middleware order is load-bearing: the last one added is the outermost.
+    # We want TrustedHost outermost (reject a rebound Host before any work
+    # happens), then CORS (so a preflight is answered, and so even a 401
+    # carries the headers a browser needs to actually read the failure),
+    # then no-store, then the token check innermost.
+
+    @app.middleware("http")
+    async def require_token(request: Request, call_next):
+        expected = app.state.auth_token
+        if expected is not None and request.url.path.startswith("/api"):
+            if not _token_ok(_extract_token(request), expected):
+                return JSONResponse(
+                    {"detail": "missing or invalid token; pass it as "
+                               f"`Authorization: Bearer …` or `{TOKEN_HEADER}`"},
+                    status_code=401,
+                    headers={"Cache-Control": "no-store"})
+        return await call_next(request)
 
     @app.middleware("http")
     async def no_store(request: Request, call_next):
@@ -182,12 +356,59 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
         resp = await call_next(request)
         resp.headers.setdefault("Cache-Control", "no-store")
         return resp
+
+    origins = allowed_origins if allowed_origins is not None else [
+        o.strip() for o in
+        os.environ.get("BINVIZ_ORIGINS", ",".join(DEFAULT_ORIGINS)).split(",")
+        if o.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware, allow_origins=origins,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", TOKEN_HEADER],
+        # Deliberately NOT allow_credentials=True: the token travels in a
+        # header, so cookies are never needed, and turning it on would make
+        # a future regression in the origin list far more dangerous.
+        expose_headers=["X-Meta"])
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=list(allowed_hosts if allowed_hosts is not None
+                           else DEFAULT_HOSTS))
+
     app.state.cache_root = cache_root
-    app.state.jobs = _Jobs()
+    app.state.max_upload = int(
+        max_upload if max_upload is not None
+        else os.environ.get("BINVIZ_MAX_UPLOAD", DEFAULT_MAX_UPLOAD))
+    app.state.max_cache = int(
+        max_cache if max_cache is not None
+        else os.environ.get("BINVIZ_MAX_CACHE", cache_mod.DEFAULT_MAX_CACHE))
+
+    def sweep_cache() -> dict:
+        return cache_mod.sweep(root(), app.state.max_cache,
+                               protect=app.state.jobs.active())
+
+    app.state.jobs = _Jobs(
+        max_analyses if max_analyses is not None else DEFAULT_MAX_ANALYSES,
+        on_finished=sweep_cache)
+    app.state.sweep_cache = sweep_cache
     app.state.dotplots = _DotPlots()
 
     def root():
         return app.state.cache_root or cache_mod.default_root()
+
+    def confined(path: str) -> str:
+        """Resolve `path` and reject anything outside `--root`.
+
+        realpath FIRST, then compare. Checking the string the caller sent
+        and resolving afterwards is the classic hole: a symlink inside the
+        root pointing anywhere passes a textual prefix check and then reads
+        whatever it aimed at.
+        """
+        real = os.path.realpath(path)
+        base = app.state.file_root
+        if base is not None and not _within(real, base):
+            raise HTTPException(403, "path is outside the served root")
+        return real
 
     def get_cache(id: str) -> BinaryCache:
         if len(id) != 64 or any(c not in "0123456789abcdef" for c in id):
@@ -196,10 +417,27 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
         if cache.meta() is None:
             raise HTTPException(404, f"unknown binary {id[:12]}…; POST "
                                      "/api/open first")
+        cache.touch()   # LRU: an entry being looked at is an entry in use
         return cache
 
+    def _meta_or_retry(cache: BinaryCache, key: str) -> dict:
+        """Read meta.json, retrying while it looks empty.
+
+        meta.json is rewritten throughout analysis via os.replace, and on
+        Windows a concurrent read can catch it mid-replace and come back
+        None. Retry rather than treat that as "the thing is not there" —
+        otherwise a perfectly ready artifact intermittently reports 409.
+        """
+        meta: dict = {}
+        for _ in range(3):
+            meta = cache.meta() or {}
+            if meta.get(key):
+                break
+            time.sleep(0.03)
+        return meta
+
     def require(cache: BinaryCache, artifact: str) -> None:
-        meta = cache.meta() or {}
+        meta = _meta_or_retry(cache, "artifacts")
         state = meta.get("artifacts", {}).get(artifact)
         if state != "ready":
             raise HTTPException(
@@ -207,14 +445,7 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                      f"poll /api/{cache.sha256}/status")
 
     def source_path(cache: BinaryCache) -> str:
-        # meta.json is rewritten throughout analysis; on Windows a read can
-        # catch it mid-replace and come back None. Retry before giving up.
-        meta = {}
-        for _ in range(3):
-            meta = cache.meta() or {}
-            if meta.get("source"):
-                break
-            time.sleep(0.03)
+        meta = _meta_or_retry(cache, "source")
         src = meta.get("source", {})
         path = (str(cache.path("file.bin")) if src.get("stored")
                 else src.get("path"))
@@ -230,6 +461,15 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
         if ctype.startswith("application/octet-stream"):
             # Streamed to disk while hashing: buffering the body would hold
             # the whole upload in RAM, and files can be larger than RAM (P12)
+            limit = app.state.max_upload
+            # Cheap rejection first, when the client declares a size. This
+            # is a courtesy, not the control — Content-Length is the
+            # client's claim, so the byte counter below is what enforces it.
+            declared = request.headers.get("content-length")
+            if declared and declared.isdigit() and int(declared) > limit:
+                raise HTTPException(
+                    413, f"upload of {int(declared)} bytes exceeds the "
+                         f"{limit}-byte limit")
             root_dir = Path(root())
             root_dir.mkdir(parents=True, exist_ok=True)
             h = hashlib.sha256()
@@ -238,8 +478,12 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
             try:
                 with os.fdopen(fd, "wb") as f:
                     async for chunk in request.stream():
-                        h.update(chunk)
                         n += len(chunk)
+                        if n > limit:
+                            # stop reading: the point is to not write it
+                            raise HTTPException(
+                                413, f"upload exceeds the {limit}-byte limit")
+                        h.update(chunk)
                         f.write(chunk)
                 if n == 0:
                     raise HTTPException(400, "empty upload")
@@ -264,15 +508,18 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
         path = doc.get("path") if isinstance(doc, dict) else None
         if not path:
             raise HTTPException(400, "missing \"path\"")
+        # confine before touching the filesystem, so a rejected path is not
+        # even probed for existence (that would be a directory oracle)
+        path = confined(path)
         if not os.path.isfile(path):
             raise HTTPException(404, f"no such file: {path}")
         sha = sha256_file(path)
-        state = app.state.jobs.ensure(sha, os.path.abspath(path), root(),
-                                      stored=False)
+        state = app.state.jobs.ensure(sha, path, root(), stored=False)
         return {"id": sha, "state": state}
 
     @app.get("/api/files")
     def list_files(dir: str):
+        dir = confined(dir)
         if not os.path.isdir(dir):
             raise HTTPException(404, f"no such directory: {dir}")
         entries = []
@@ -282,7 +529,7 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                     entries.append({"name": e.name,
                                     "path": os.path.abspath(e.path),
                                     "size": e.stat().st_size})
-        return {"dir": os.path.abspath(dir), "files": entries}
+        return {"dir": dir, "files": entries}
 
     # ---------------------------------------------------------- status
 
@@ -475,6 +722,7 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                 start: int = 0, end: int = -1, w: int = 512, h: int = 512,
                 dtype: str = "u8"):
         from .surfaces import SurfaceRequest, get_surface
+        from .surfaces.base import SurfaceParamError
 
         cache = get_cache(id)
         require(cache, "model")   # analysis running is fine; bytes suffice
@@ -486,12 +734,28 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
         params = {k: _typed(v) for k, v in request.query_params.items()
                   if k not in reserved}
         path = source_path(cache)
+        # clamp() bounds w/h; SurfaceParamError covers everything a caller
+        # can put in the free-form params (S3/S4). Catching the dedicated
+        # subclass rather than ValueError keeps a genuine bug in the render
+        # path a 500, where it belongs.
+        #
+        # The message is carried out of the `with` rather than raised inside
+        # it. An exception propagating through MappedFile.__exit__ keeps the
+        # render frame alive via its traceback, and that frame still holds
+        # numpy views of the mmap — so close() raises BufferError on Windows
+        # and buries the real error (HANDOVER.md gotcha 7). Catching here
+        # drops the traceback before the file is unmapped.
+        param_error: str | None = None
         with MappedFile.open(path) as mf:
             req = SurfaceRequest(start, end, w, h, dtype, params) \
                 .clamp(mf.size)
-            if name == "dotplot":
-                return _dotplot_response(app, cache, surf, mf, req)
-            return _surface_response(cache, surf, mf, req, name)
+            try:
+                if name == "dotplot":
+                    return _dotplot_response(app, cache, surf, mf, req)
+                return _surface_response(cache, surf, mf, req, name)
+            except SurfaceParamError as e:
+                param_error = str(e)
+        raise HTTPException(400, param_error)
 
     @app.get("/api/{id}/image/stride")
     def image_stride(id: str, start: int = 0, end: int = -1,
@@ -706,12 +970,14 @@ def _surface_response(cache: BinaryCache, surf, mf, req, name: str):
 def _dotplot_response(app, cache: BinaryCache, surf, mf, req):
     from .surfaces.dotplot import DEFAULT_WINDOW
 
+    from .surfaces.base import int_param
+
     p = req.params
-    k = int(p.get("window", DEFAULT_WINDOW))
-    off1 = int(p.get("off1", req.start))
-    end1 = int(p.get("end1", req.end))
-    off2 = int(p.get("off2", off1))
-    end2 = int(p.get("end2", end1))
+    k = int_param(p, "window", DEFAULT_WINDOW, lo=1, hi=1 << 20)
+    off1 = int_param(p, "off1", req.start, lo=0)
+    end1 = int_param(p, "end1", req.end, lo=0)
+    off2 = int_param(p, "off2", off1, lo=0)
+    end2 = int_param(p, "end2", end1, lo=0)
     n1 = max(0, (end1 - off1) - k + 1)
     n2 = max(0, (end2 - off2) - k + 1)
 
@@ -730,4 +996,11 @@ def _dotplot_response(app, cache: BinaryCache, surf, mf, req):
                     headers=_meta_headers(side))
 
 
-app = create_app()
+# `uvicorn binviz.service:app`. `binviz serve` is the supported entry point
+# and passes these explicitly; this fallback takes the safe defaults rather
+# than the convenient ones, so running uvicorn directly is still authenticated
+# and still confined. Set BINVIZ_TOKEN to pin the token across restarts.
+app = create_app(
+    file_root=os.environ.get("BINVIZ_ROOT") or os.getcwd(),
+    token=os.environ.get("BINVIZ_TOKEN") or None,
+)

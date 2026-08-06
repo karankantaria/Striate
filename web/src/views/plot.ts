@@ -11,6 +11,7 @@
 
 import { getSignal, type BinaryModel, type Region, type SignalBand, type SignalInfo } from "../api.ts";
 import { LOCATE_RGB, SERIES, type Theme } from "../colormap.ts";
+import { esc } from "../escape.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
 import { hideTooltip, showTooltip } from "../tooltip.ts";
 
@@ -390,7 +391,7 @@ export class PlotView {
     const rows = [`<b>${fmtHex(off)}</b>`];
     const region = this.model?.regions.find((r) =>
       r.file_off >= 0 && off >= r.file_off && off < r.file_off + r.file_size);
-    if (region) rows.push(`<span class="t2">${region.name} (${region.kind})</span>`);
+    if (region) rows.push(`<span class="t2">${esc(region.name)} (${region.kind})</span>`);
     for (const lane of this.lanes) {
       if (!lane.enabled || !lane.band) continue;
       const b = lane.band;

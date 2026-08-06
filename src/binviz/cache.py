@@ -39,6 +39,18 @@ TRIGRAM_DTYPE = "<i4"
 # total and whether the artifact is capped.
 TRIGRAM_STORE_MAX_POINTS = 1 << 22   # 4.2M points = 64 MiB on disk
 
+# Cache eviction (S6). Nothing used to shrink this directory: `wipe()` only
+# fired on a params-fingerprint mismatch, so every binary ever opened was
+# retained forever. Measured: 17 small corpus samples came to 514 MB, and an
+# uploaded file additionally stores a full copy of itself as file.bin.
+DEFAULT_MAX_CACHE = 5 << 30          # 5 GiB; --max-cache / BINVIZ_MAX_CACHE
+
+# An entry touched this recently is never evicted, even if it is the least
+# recently used and the budget is blown. This is what stops the sweep
+# deleting the artifacts out from under a tab that is looking at them: an
+# entry being viewed is by definition being touched.
+PROTECT_RECENT_SECONDS = 300
+
 
 def default_root() -> Path:
     env = os.environ.get("BINVIZ_CACHE")
@@ -126,6 +138,100 @@ class BinaryCache:
     def wipe(self) -> None:
         if self.dir.exists():
             shutil.rmtree(self.dir)
+
+    def touch(self) -> None:
+        """Mark this entry as used, for the LRU sweep.
+
+        A directory mtime bump rather than a meta.json field: this runs on
+        every API request, and rewriting meta.json that often would be both
+        wasteful and a good way to hit the read-during-replace race that
+        `source_path` already has to retry around.
+        """
+        try:
+            os.utime(self.dir)
+        except OSError:
+            pass          # entry not created yet, or evicted underneath us
+
+
+def _is_entry(name: str) -> bool:
+    """Cache entries are sha256 hex directories. Anything else in the root
+    (stray .upload temp files, the user's own junk) is not ours to delete."""
+    return len(name) == 64 and all(c in "0123456789abcdef" for c in name)
+
+
+def entry_size(path: Path) -> int:
+    """Bytes on disk under `path`, ignoring anything that vanishes mid-walk."""
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(path):
+        for name in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, name))
+            except OSError:
+                pass      # raced with a writer or another sweep
+    return total
+
+
+def cache_usage(root: str | os.PathLike | None = None) -> list[tuple[str, int, float]]:
+    """(sha, bytes, mtime) for every entry, least recently used first."""
+    base = Path(root) if root else default_root()
+    if not base.is_dir():
+        return []
+    out = []
+    for child in base.iterdir():
+        if not child.is_dir() or not _is_entry(child.name):
+            continue
+        try:
+            mtime = child.stat().st_mtime
+        except OSError:
+            continue
+        out.append((child.name, entry_size(child), mtime))
+    out.sort(key=lambda e: e[2])
+    return out
+
+
+def sweep(root: str | os.PathLike | None = None,
+          budget: int = DEFAULT_MAX_CACHE, *,
+          protect: "set[str] | frozenset[str] | tuple" = (),
+          now: float | None = None,
+          protect_recent: float = PROTECT_RECENT_SECONDS) -> dict:
+    """Evict least-recently-used entries until the cache fits `budget`.
+
+    Never evicts an entry in `protect` (analyses in flight) or one touched
+    within `protect_recent` seconds (something is looking at it). Those two
+    guards mean the budget is a target rather than a hard ceiling: if
+    everything is active, the cache is allowed to exceed it rather than
+    delete data a viewer still needs. That is the intended trade — the
+    alternative is a tab whose data disappears underneath it.
+
+    Returns a summary; callers may log it, but nothing depends on it.
+    """
+    if budget <= 0:
+        return {"total": 0, "evicted": [], "freed": 0, "protected": 0,
+                "over_budget": False}
+    now = time.time() if now is None else now
+    entries = cache_usage(root)
+    total = sum(size for _sha, size, _m in entries)
+    evicted: list[str] = []
+    freed = 0
+    n_protected = 0
+
+    base = Path(root) if root else default_root()
+    for sha, size, mtime in entries:            # least recently used first
+        if total <= budget:
+            break
+        if sha in protect or (now - mtime) < protect_recent:
+            n_protected += 1
+            continue
+        try:
+            shutil.rmtree(base / sha)
+        except OSError:
+            continue      # in use on Windows; it will be a candidate again
+        evicted.append(sha)
+        freed += size
+        total -= size
+
+    return {"total": total, "evicted": evicted, "freed": freed,
+            "protected": n_protected, "over_budget": total > budget}
 
 
 def _replace(tmp: Path, dst: Path, attempts: int = 5) -> None:

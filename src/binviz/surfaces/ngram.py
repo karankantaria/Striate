@@ -12,7 +12,8 @@ import numpy as np
 
 from ..elements import elements, element_info, quantise
 from ..stats import ngram
-from .base import Raster, SurfaceRequest, register
+from .base import (Raster, SurfaceParamError, SurfaceRequest,
+                   int_param, register)
 
 DISPLAY_MODES = ("log1p", "rank", "sqrt", "linear")
 
@@ -41,7 +42,8 @@ def to_display(counts: np.ndarray, mode: str = "log1p") -> np.ndarray:
             v[nz] = order + 1.0
         v = v.reshape(c.shape)
     else:
-        raise ValueError(f"unknown display mode {mode!r}; known: {DISPLAY_MODES}")
+        raise SurfaceParamError(
+            f"unknown display mode {mode!r}; known: {DISPLAY_MODES}")
     peak = float(v.max()) if v.size else 0.0
     if peak <= 0:
         return np.zeros(c.shape, dtype=np.uint8)
@@ -91,8 +93,8 @@ class Ngram3Points:
 
     def points(self, buf, req: SurfaceRequest) -> tuple[np.ndarray, np.ndarray, dict]:
         bins, qmeta = _quantised_bins(buf, req)
-        threshold = int(req.params.get("threshold", 1))
-        max_points = int(req.params.get("max_points", 0))
+        threshold = int_param(req.params, "threshold", 1, lo=1)
+        max_points = int_param(req.params, "max_points", 0, lo=0)
         coords, counts = ngram(bins, 3)
         meta = {"dtype": req.dtype, "quantise": qmeta, "threshold": threshold,
                 "total_points": int(len(counts)), "warnings": []}

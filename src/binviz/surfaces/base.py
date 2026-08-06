@@ -15,6 +15,62 @@ from ..elements import Dtype
 
 N_BYTE_CLASSES = 6
 
+#: Ceiling on a requested raster dimension (S4). `clamp` used to be a floor
+#: only — `max(1, w)` — so `?w=20000&h=20000` asked for a 400-million-cell
+#: raster from a single GET, which did not return inside 40 s. 4096 is well
+#: past any real display and bounds the allocation at ~16M cells.
+MAX_RASTER_DIM = 4096
+
+#: Image row width is a different axis: it is a stride in pixels, not a
+#: canvas size, so it gets a looser bound. It still needs *a* bound, because
+#: the "range shorter than one row" path allocates a `width`-wide row of
+#: zeros before it can report the problem.
+MAX_IMAGE_WIDTH = 1 << 16
+
+
+class SurfaceParamError(ValueError):
+    """A surface parameter is missing, non-numeric, or out of range.
+
+    Subclasses ValueError so existing `except ValueError` handlers keep
+    working, but is distinct so the HTTP layer can map *these* to 400
+    without also turning a genuine bug deeper in the render path into one.
+    A 500 for a malformed query string is wrong; a 400 for an internal
+    error is worse, because it blames the caller.
+    """
+
+
+def int_param(params: dict, key: str, default, *,
+              lo: int | None = None, hi: int | None = None) -> int:
+    """Read an integer surface parameter, or raise SurfaceParamError.
+
+    Query strings arrive already coerced by the service's `_typed`, so a
+    value can be str, int, float or bool by the time it lands here. Never
+    let one reach a bare `int()`: `int("abc")` is a 500 with a traceback.
+    """
+    raw = params.get(key, default)
+    if isinstance(raw, bool):
+        raise SurfaceParamError(f"{key!r} must be a number, got {raw!r}")
+    try:
+        # OverflowError matters: the service coerces "1e999" to float
+        # inf before this sees it, and int(inf) overflows rather than
+        # raising ValueError.
+        value = int(raw)
+    except (TypeError, ValueError, OverflowError):
+        raise SurfaceParamError(f"{key!r} must be a number, got {raw!r}")
+    if lo is not None and value < lo:
+        raise SurfaceParamError(f"{key!r} must be >= {lo}, got {value}")
+    if hi is not None and value > hi:
+        raise SurfaceParamError(f"{key!r} must be <= {hi}, got {value}")
+    return value
+
+
+def choice_param(params: dict, key: str, default: str, allowed) -> str:
+    value = params.get(key, default)
+    if value not in allowed:
+        raise SurfaceParamError(
+            f"unknown {key} {value!r}; known: {sorted(allowed)}")
+    return value
+
 
 @dataclass(frozen=True)
 class SurfaceRequest:
@@ -25,10 +81,12 @@ class SurfaceRequest:
     dtype: Dtype = "u8"
     params: dict = field(default_factory=dict)
 
-    def clamp(self, size: int) -> "SurfaceRequest":
+    def clamp(self, size: int, max_dim: int = MAX_RASTER_DIM) -> "SurfaceRequest":
         start = max(0, min(self.start, size))
         end = max(start, min(self.end if self.end >= 0 else size, size))
-        return SurfaceRequest(start, end, max(1, self.width), max(1, self.height),
+        return SurfaceRequest(start, end,
+                              min(max(1, self.width), max_dim),
+                              min(max(1, self.height), max_dim),
                               self.dtype, self.params)
 
     @property
@@ -112,7 +170,8 @@ def reduce_values(values: np.ndarray, n_cells: int,
         out = np.where(seg > 0, (cs[bounds[1:]] - cs[bounds[:-1]])
                        / np.maximum(seg, 1), v[starts])
         return out
-    raise ValueError(f"unknown reducer {how!r}")
+    raise SurfaceParamError(f"unknown reducer {how!r}; "
+                            f"known: ['max', 'mean', 'min']")
 
 
 def scale_to_u8(values: np.ndarray, lo: float, hi: float) -> np.ndarray:

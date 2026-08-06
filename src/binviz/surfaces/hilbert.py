@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..elements import BYTE_CLASS_NAMES, byte_class
-from .base import (Raster, SurfaceRequest, register, reduce_mode_class,
+from .base import (Raster, SurfaceParamError, SurfaceRequest, register, reduce_mode_class,
                    reduce_values, scale_to_u8)
 
 
@@ -111,7 +111,7 @@ class HilbertSurface:
             meta["value_range"] = [0, 255]
             values = scale_to_u8(reduce_values(a, n_cells, how), 0, 255)
         else:
-            raise ValueError(f"unknown hilbert mode {mode!r}")
+            raise SurfaceParamError(f"unknown hilbert mode {mode!r}")
 
         d = np.arange(n_cells, dtype=np.int64)
         x, y = d2xy(order, d)

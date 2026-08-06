@@ -17,6 +17,7 @@ import {
   type BinaryModel, type Hist2Meta, type QuantiseMeta,
 } from "../api.ts";
 import { applyLut, VIRIDIS, type Theme } from "../colormap.ts";
+import { esc } from "../escape.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
 import { toDisplay, type DisplayMode } from "../transforms.ts";
 import { hideTooltip, showTooltip } from "../tooltip.ts";
@@ -343,8 +344,4 @@ function binRange(bin: number, q: QuantiseMeta): string {
 function fmtQ(v: number): string {
   if (Number.isInteger(v)) return v.toLocaleString();
   return Math.abs(v) >= 100 ? v.toFixed(0) : v.toPrecision(3);
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 }

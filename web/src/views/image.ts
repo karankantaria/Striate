@@ -12,6 +12,7 @@ import {
   getStrideSuggestions, getSurfaceRgb,
   type BinaryModel, type StrideCandidate, type SurfaceMeta,
 } from "../api.ts";
+import { esc } from "../escape.ts";
 import {
   fmtHex, offToVa, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -292,8 +293,4 @@ export class ImageView {
 function parseOffset(s: string): number {
   const n = Number(s.trim() || "0");   // Number() handles 0x… prefixes
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 }

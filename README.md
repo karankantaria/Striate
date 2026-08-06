@@ -48,6 +48,43 @@ binviz surface corpus/out/repeats.bin  --name dotplot -p mode=exact --png d.png
 binviz stride  corpus/out/bayer_raw.bin --mode bayer_RGGB_RGB_12
 ```
 
+## Running the server
+
+```sh
+binviz serve                              # 127.0.0.1:8000
+```
+
+It prints a URL containing a session token — open that. **Every `/api` route
+requires the token**, because "it only listens on localhost" is not a defence
+against a web page in another tab, which reaches `127.0.0.1` just like any
+other origin. `SECURITY.md` has the reasoning.
+
+File access is confined to `--root` (default: the working directory), so
+paths outside it are refused.
+
+### Limits
+
+All four have a flag and an environment variable, and all four exist to stop
+a local caller consuming more than you intended. Defaults are chosen for a
+laptop; raise them if your machine is bigger.
+
+| Flag | Env | Default | What it bounds |
+|---|---|---|---|
+| `--max-cache BYTES` | `BINVIZ_MAX_CACHE` | 5 GiB | Total size of cached analyses. Past this, least-recently-used entries are evicted — never one being analysed or viewed. |
+| `--max-upload BYTES` | `BINVIZ_MAX_UPLOAD` | 8 GiB | Largest accepted upload. |
+| `--max-analyses N` | — | 4 | Simultaneous analyses; beyond it `/api/open` returns 503. |
+| `--root DIR` | — | cwd | Directory the server may read files from. |
+
+Analyses are cached under `~/.cache/binviz` (or `$BINVIZ_CACHE`), keyed by
+content hash, so reopening a binary is instant. Raise `--max-cache` if you
+would rather keep more of them; the cache is safe to delete by hand at any
+time — the worst case is that the next open re-analyses.
+
+Other flags: `--token` to pin a token across restarts (useful with the Vite
+dev proxy, which reads `BINVIZ_TOKEN`), `--port`, `--cache`, and `--no-auth`
+for CI. `--no-auth` prints a banner telling you what it turned off; do not
+use it on a machine you share.
+
 Plates live in `docs/plates/` — regenerate with `python docs/make_plates.py`.
 Start with `image_rgb_bars.png` next to `image_rgb_bars_wrong_stride.png`
 (why the stride suggester exists), and `hilbert_byteclass_static.png` next to

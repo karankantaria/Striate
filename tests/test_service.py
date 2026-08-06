@@ -6,10 +6,8 @@ import time
 
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
-from binviz.service import create_app
-from conftest import OUT, require_sample
+from conftest import OUT, authed_client, make_app, require_sample
 
 
 def xmeta(r) -> dict:
@@ -31,8 +29,8 @@ def open_and_wait(client, path, timeout=180):
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    app = create_app(tmp_path_factory.mktemp("srvcache"))
-    with TestClient(app) as c:
+    app = make_app(tmp_path_factory.mktemp("srvcache"))
+    with authed_client(app) as c:
         yield c
 
 
@@ -254,8 +252,8 @@ def test_concurrent_open_analyzes_once(tmp_path, manifest, monkeypatch):
         return real(cache, source, **kw)
 
     monkeypatch.setattr(cache_mod, "analyze", counting)
-    app = create_app(tmp_path)
-    with TestClient(app) as client:
+    app = make_app(tmp_path)
+    with authed_client(app) as client:
         with concurrent.futures.ThreadPoolExecutor(4) as ex:
             rs = list(ex.map(
                 lambda _: client.post("/api/open", json={"path": path}),

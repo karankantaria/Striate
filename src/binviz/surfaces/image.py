@@ -17,7 +17,8 @@ from __future__ import annotations
 import numpy as np
 
 from ..elements import elements
-from .base import Raster, SurfaceRequest, register
+from .base import (MAX_IMAGE_WIDTH, Raster, SurfaceParamError,
+                   SurfaceRequest, int_param, register)
 
 CFA_PHASES = ("RGGB", "BGGR", "GRBG", "GBRG")
 CHANNEL_PERMS = ("RGB", "RBG", "GRB", "GBR", "BRG", "BGR")
@@ -41,10 +42,10 @@ def parse_mode(mode: str) -> dict:
         if mode.startswith(fmt):
             depth = mode[len(fmt):] or "8"
             if not depth.isdigit() or int(depth) not in BIT_DEPTHS:
-                raise ValueError(f"bad bit depth in mode {mode!r}; "
-                                 f"expected one of {BIT_DEPTHS}")
+                raise SurfaceParamError(f"bad bit depth in mode {mode!r}; "
+                                        f"expected one of {BIT_DEPTHS}")
             return {"kind": "packed", "format": fmt, "depth": int(depth)}
-    raise ValueError(f"unknown image mode {mode!r}")
+    raise SurfaceParamError(f"unknown image mode {mode!r}")
 
 
 def _parse_bayer(mode: str) -> dict:
@@ -54,18 +55,21 @@ def _parse_bayer(mode: str) -> dict:
         if len(parts) == 2 and parts[0] in CFA_PHASES and parts[1] in CHANNEL_PERMS:
             return {"kind": "bayer", "phase": parts[0], "perm": parts[1],
                     "depth": 8}
-        if len(parts) == 3 and parts[0] in CFA_PHASES:
+        if len(parts) == 3 and parts[0] in CFA_PHASES and parts[2].isdigit():
             return {"kind": "bayer", "phase": parts[0], "perm": parts[1],
                     "depth": int(parts[2])}
-        raise ValueError(f"unknown bayer mode {mode!r}")
-    # reference-compatible bayer<depth>_<index 0..23>
+        raise SurfaceParamError(f"unknown bayer mode {mode!r}")
+    # reference-compatible bayer<depth>_<index 0..23>. isdigit() guards
+    # every int() here: `bayerXX_1` used to reach int("XX") and 500.
     depth_str, _, idx_str = body.partition("_")
+    if depth_str and not depth_str.isdigit():
+        raise SurfaceParamError(f"unknown bayer mode {mode!r}")
     depth = int(depth_str) if depth_str else 8
     if depth not in BIT_DEPTHS or not idx_str.isdigit():
-        raise ValueError(f"unknown bayer mode {mode!r}")
+        raise SurfaceParamError(f"unknown bayer mode {mode!r}")
     idx = int(idx_str)
     if not 0 <= idx < len(BAYER_MODES):
-        raise ValueError(f"bayer index {idx} out of range 0..23")
+        raise SurfaceParamError(f"bayer index {idx} out of range 0..23")
     return {"kind": "bayer", "phase": CFA_PHASES[idx // len(CHANNEL_PERMS)],
             "perm": CHANNEL_PERMS[idx % len(CHANNEL_PERMS)], "depth": depth}
 
@@ -244,9 +248,13 @@ class ImageSurface:
     def render(self, buf, req: SurfaceRequest) -> Raster:
         mode = req.params.get("mode", "grey8")
         spec = parse_mode(mode)
-        width = int(req.params.get("width", req.width))
+        # width=0 divided by zero, width=-5 failed the reshape, and
+        # width=abc never got past int() — all three were 500s (S3).
+        width = int_param(req.params, "width", req.width,
+                          lo=1, hi=MAX_IMAGE_WIDTH)
         invert = bool(req.params.get("invert", False))
-        max_rows = int(req.params.get("max_rows", 4096))
+        max_rows = int_param(req.params, "max_rows", 4096,
+                             lo=1, hi=MAX_IMAGE_WIDTH)
 
         raw = np.frombuffer(buf, dtype=np.uint8)[req.start:req.end]
         vals = elements(raw.tobytes(), _DTYPE_FOR_DEPTH[spec["depth"]])

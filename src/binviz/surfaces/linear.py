@@ -11,7 +11,8 @@ from __future__ import annotations
 import numpy as np
 
 from ..elements import BYTE_CLASS_NAMES, byte_class
-from .base import (Raster, SurfaceRequest, register, reduce_mode_class,
+from .base import (Raster, SurfaceParamError, SurfaceRequest,
+                   choice_param, register, reduce_mode_class,
                    reduce_values, scale_to_u8)
 
 
@@ -42,7 +43,8 @@ class LinearSurface:
         elif mode == "signal":
             from ..signals import SIGNALS, compute_signals
 
-            name = req.params.get("signal", "entropy_4096")
+            # unknown name used to KeyError out of compute_signals -> 500
+            name = choice_param(req.params, "signal", "entropy_4096", SIGNALS)
             how = req.params.get("reduce", "max")
             sig = compute_signals(a.tobytes(), [name])[name]
             cells = reduce_values(sig.values, n_cells, how)
@@ -58,7 +60,7 @@ class LinearSurface:
                     "(upsampled)")
             pixels = scale_to_u8(cells, sig.lo, sig.hi)
         else:
-            raise ValueError(f"unknown linear mode {mode!r}")
+            raise SurfaceParamError(f"unknown linear mode {mode!r}")
 
         if req.nbytes < n_cells:
             meta["warnings"].append(

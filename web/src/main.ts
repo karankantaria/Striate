@@ -8,6 +8,7 @@ import {
   type BinaryModel, type FileEntry, type Status,
 } from "./api.ts";
 import type { Theme } from "./colormap.ts";
+import { esc } from "./escape.ts";
 import { SelectionStore, fmtRange, type ElementDtype } from "./store.ts";
 import type { DisplayMode } from "./transforms.ts";
 import { CfgView } from "./views/cfg.ts";
@@ -262,7 +263,7 @@ function addRecent(path: string): void {
 
 function renderRecent(): void {
   $("recent-files").innerHTML = recentList()
-    .map((p) => `<option value="${p.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"></option>`)
+    .map((p) => `<option value="${esc(p)}"></option>`)
     .join("");
 }
 renderRecent();

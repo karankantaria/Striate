@@ -15,6 +15,7 @@ import {
   BYTE_CLASS_COLORS, BYTE_CLASS_NAMES, byteClassLut, GRAY, LOCATE_RGB,
   VIRIDIS, type Lut, type Theme,
 } from "../colormap.ts";
+import { esc } from "../escape.ts";
 import { d2xy, offsetAtXY } from "../hilbert.ts";
 import {
   fmtHex, offToVa, regionAtOff,
@@ -384,10 +385,18 @@ export class OverallView {
   private renderLegend(): void {
     if (!this.legendEl) return;
     if (this.mode === "byteclass") {
+      // Swatch colours are set through the CSSOM rather than a style="…"
+      // attribute so the page can keep a strict `style-src 'self'` CSP.
       const colors = BYTE_CLASS_COLORS[this.theme];
-      this.legendEl.innerHTML = BYTE_CLASS_NAMES.map((name, i) =>
-        `<span class="key"><span class="swatch" style="background:${colors[i]}"></span>${name}</span>`,
-      ).join("");
+      this.legendEl.replaceChildren(...BYTE_CLASS_NAMES.map((name, i) => {
+        const key = document.createElement("span");
+        key.className = "key";
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = colors[i];
+        key.append(swatch, name);
+        return key;
+      }));
     } else if (this.mode === "signal") {
       this.legendEl.innerHTML =
         `<span class="key">entropy 0–8 bits/byte, window 4 KiB, max per pixel (viridis)</span>`;
@@ -395,8 +404,4 @@ export class OverallView {
       this.legendEl.innerHTML = `<span class="key">byte value 0x00–0xFF (grey)</span>`;
     }
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 }

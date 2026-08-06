@@ -12,10 +12,8 @@ import json
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 
-from binviz.service import create_app
-from conftest import require_sample
+from conftest import authed_client, make_app, require_sample
 
 
 def xmeta(r) -> dict:
@@ -24,8 +22,8 @@ def xmeta(r) -> dict:
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    app = create_app(tmp_path_factory.mktemp("p9cache"))
-    with TestClient(app) as c:
+    app = make_app(tmp_path_factory.mktemp("p9cache"))
+    with authed_client(app) as c:
         yield c
 
 

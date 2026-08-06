@@ -27,26 +27,44 @@
 Two processes: the analysis server and the Vite dev server (no static mount yet —
 the FastAPI app does **not** serve `web/dist`; dev mode is the way to run the UI).
 
+**The API now requires a token** (S1a) and confines file access to `--root`
+(S1d) — see `SECURITY.md`. Pin the token so both processes agree:
+
 ```bash
+export BINVIZ_TOKEN=dev-token-not-a-secret     # any string; dev only
+
 # 1. backend (Python 3.11+, deps already in .venv)
-.venv/Scripts/python -m binviz.cli serve            # 127.0.0.1:8000
+.venv/Scripts/python -m binviz.cli serve \
+    --token "$BINVIZ_TOKEN" --root .            # 127.0.0.1:8000
 
 # 2. frontend (Node 24; `npm install` already run in web/)
-cd web && npm run dev                                # 127.0.0.1:5173, proxies /api -> :8000
+cd web && npm run dev                            # 127.0.0.1:5173, proxies /api -> :8000
 # non-default backend port: BINVIZ_API=http://127.0.0.1:8377 npm run dev
 ```
 
-Open http://localhost:5173 and paste an absolute path (e.g.
+The Vite proxy attaches `BINVIZ_TOKEN` to every proxied request, so the
+browser never sees it. Without that env var, run plain `binviz serve` and open
+the `?token=…` URL it prints — `src/auth.ts` stores the token and strips it
+from the address bar.
+
+`--root .` matters: paths outside it now 403. Drop it and the CLI defaults to
+the working directory anyway.
+
+Then open http://localhost:5173 and paste an absolute path (e.g.
 `corpus/out/hello_upx`), or drop a file onto the window, or use
 `?path=C:\...\file` in the URL. Corpus samples: `make -C corpus` or
 `python corpus/build.py` (outputs in `corpus/out/`, gitignored).
 
 Tests:
 ```bash
-.venv/Scripts/python -m pytest -q         # backend, 316 passing (perf marked-out)
-cd web && npm test                        # 37 node --test units (hilbert/off↔va/colormap/transforms/hexutil/cfgutil)
+.venv/Scripts/python -m pytest -q         # backend, 334 passing (perf marked-out)
+cd web && npm test                        # 45 node --test units (hilbert/off↔va/colormap/transforms/hexutil/cfgutil/escape)
 cd web && npm run build                   # tsc --noEmit (strict) + vite build
 ```
+
+Service tests go through `conftest.make_app` / `authed_client`, which build
+an authenticated app and send the real token. Don't reach for `auth=False`
+to make a new test pass — see the note in `conftest.py`.
 
 ## What Phase 7 built (`web/`)
 
@@ -297,6 +315,12 @@ collapses to the diagonal on arrival); warm next/prev paint 126 ms
    via `os.replace`; a concurrent read can transiently see nothing →
    `source_path()` used to 410. It now retries ×3 (`service.py`). Frontend
    surface fetches additionally retry on 409/410 every 700 ms.
+   **Update (S6 work):** `require()` had the same bug and nobody had noticed
+   — a transient empty read made it report a *ready* artifact as not ready,
+   i.e. an intermittent spurious 409. Both now go through
+   `_meta_or_retry(cache, key)`. If you add another meta.json reader on a
+   request path, use that helper; a bare `cache.meta()` will bite you only
+   under concurrency, which means only in production.
 3. **Don't trust ResizeObserver ordering after unhiding a container.** The
    initial "layout unhidden → RO fires → cached size becomes valid" chain is
    not reliable; `RasterCanvas.sync()` pulls `clientWidth` from the DOM at

@@ -3,6 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Defence in depth behind the escaper in src/escape.ts: this tool's job
+         is opening files an attacker chose, so a name that survives escaping
+         must still not become executable script. `script-src 'self'` is the
+         load-bearing directive — it kills inline handlers and injected
+         <script> alike. `style-src` keeps 'unsafe-inline' only because Vite's
+         dev server injects CSS through <style> elements; the packaged build
+         should send a stricter policy as a real header (frame-ancestors is
+         ignored in a meta tag, so it has to go there too). The ws: sources
+         are Vite HMR in dev; nothing listens on them in a release build. -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob:;
+      connect-src 'self' ws://127.0.0.1:* ws://localhost:*;
+      worker-src 'self' blob:;
+      object-src 'none';
+      base-uri 'none';
+      form-action 'self'
+    " />
     <title>binviz</title>
     <link rel="stylesheet" href="/src/theme.css" />
   </head>

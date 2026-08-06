@@ -18,6 +18,7 @@ import {
   type FunctionsDoc,
 } from "../api.ts";
 import type { Theme } from "../colormap.ts";
+import { esc } from "../escape.ts";
 import {
   fmtHex, fmtSize, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -592,8 +593,4 @@ export class CfgView {
       ctx.fillText("?", cx - tw / 2, cy + 1);
     }
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 }

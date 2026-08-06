@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .base import Raster, SurfaceRequest, register
+from .base import Raster, SurfaceRequest, int_param, register
 
 EXACT_MAX_BYTES = 256 * 1024
 DEFAULT_WINDOW = 8
@@ -341,7 +341,7 @@ class DotPlotSurface:
     @staticmethod
     def accumulator(req: SurfaceRequest, w: int, h: int,
                     n1: int, n2: int) -> DotPlotAccumulator:
-        seed = int(req.params.get("seed", 0))
+        seed = int_param(req.params, "seed", 0)
         # int64: weighted joins accumulate true pair counts, and a
         # degenerate k-mer over a huge range overflows uint32 per cell
         return DotPlotAccumulator(

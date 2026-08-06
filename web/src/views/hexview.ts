@@ -10,6 +10,7 @@
    caret. */
 
 import { getBytes, type BinaryModel, type Region } from "../api.ts";
+import { esc } from "../escape.ts";
 import {
   fmtHex, offToVa, regionAtOff, type SelectionStore,
 } from "../store.ts";
@@ -240,8 +241,4 @@ export class HexView {
     this.addrEl.textContent =
       `${fmtHex(a)}${va !== null ? " · VA " + fmtHex(va) : ""}`;
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 }

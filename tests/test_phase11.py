@@ -12,14 +12,12 @@ import json
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 
 from binviz.disasm import recover
 from binviz.loader import MappedFile
 from binviz.parse import parse
-from binviz.service import create_app
 from binviz.triage import triage
-from conftest import require_sample
+from conftest import authed_client, make_app, require_sample
 
 
 def run_triage(path: str, with_functions: bool = True) -> dict:
@@ -145,8 +143,8 @@ def test_verdict_survives_missing_functions(manifest):
 
 @pytest.fixture(scope="module")
 def client(tmp_path_factory):
-    app = create_app(tmp_path_factory.mktemp("p11cache"))
-    with TestClient(app) as c:
+    app = make_app(tmp_path_factory.mktemp("p11cache"))
+    with authed_client(app) as c:
         yield c
 
 
