@@ -1,37 +1,69 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77+ for PEP 639: the SPDX `license` string and `license-files` below.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "binviz"
-version = "0.0.1"
 description = "Binary visualiser & triage tool: linked interactive views over a shared address-space model"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
+# One source of truth, in src/binviz/__init__.py. It used to be declared
+# here *and* there, and the two had already drifted apart (0.0.1 vs 0.0.3).
+dynamic = ["version"]
+
+# Ranges, not pins (§4.2). Exact pins are right for a lockfile and wrong for
+# a published distribution: `numpy==2.5.1` beside anything else that wants
+# numpy produces an unsolvable resolution, and the user cannot fix it. The
+# versions actually tested live in `constraints-dev.txt`; install with
+#     pip install -e ".[dev]" -c constraints-dev.txt
+# to reproduce the environment the suite is green in.
+#
+# Upper bounds are at the next major because binviz is an application rather
+# than a library — nothing depends on *us*, so a cap here strands nobody, and
+# a silent API break in a binary parser is a wrong answer rather than a
+# crash.
 dependencies = [
-    "lief==1.0.0",
-    "capstone==5.0.9",
-    "numpy==2.5.1",
-    "fastapi==0.141.1",
-    "uvicorn==0.52.1",
-    "pillow==12.3.0",
+    # The tight one, on purpose. lief's API moves fast and it is the
+    # component whose failure mode is a *plausible but wrong* parse rather
+    # than an exception. Nothing else in a normal environment depends on
+    # lief, so a narrow range costs almost no resolution pain. Re-run the
+    # parser tests before widening this.
+    "lief>=1.0,<1.1",
+    # 5.0.1, not 5.0: 5.0.0 is yanked on PyPI ("wrong"), and a floor that
+    # resolves to a yanked release is a floor nobody should land on.
+    "capstone>=5.0.1,<6",
+    "numpy>=2.1,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "pillow>=10.1,<14",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest==9.1.1",
+    "pytest>=8,<10",
     # FastAPI's TestClient transport (tests/test_service.py)
-    "httpx==0.28.1",
+    "httpx>=0.27,<1",
     # independent x86 decoder used as the differential-test oracle where
     # binutils (objdump) is unavailable, e.g. plain Windows hosts
-    "iced-x86==1.21.0",
+    "iced-x86>=1.21,<2",
     # zig cc is the cross-compiler used to build the ELF corpus samples on
     # hosts without a native Linux toolchain (the samples are parsed, never run)
-    "ziglang==0.16.0",
+    "ziglang>=0.16,<0.17",
 ]
+
+[project.urls]
+Homepage = "https://github.com/karankantaria/Striate"
+Source = "https://github.com/karankantaria/Striate"
+Issues = "https://github.com/karankantaria/Striate/issues"
+Security = "https://github.com/karankantaria/Striate/blob/main/SECURITY.md"
 
 [project.scripts]
 binviz = "binviz.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "binviz.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

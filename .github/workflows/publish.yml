@@ -1,0 +1,159 @@
+# Publish to PyPI with Trusted Publishing (SECURITY-UI-WORKORDER §4.5).
+#
+# No API token exists anywhere: PyPI verifies a short-lived OIDC identity
+# minted by GitHub for this specific workflow in this specific repository.
+# There is no long-lived secret to steal, to leak in a log, or to forget to
+# rotate — and for a tool in the security space a stolen publish token is
+# the worst available outcome, because the next `pip install binviz` would
+# hand an attacker's code to the exact population that opens malware for a
+# living (§4.6).
+#
+# ONE-TIME SETUP, on PyPI, before this can run:
+#   PyPI -> your project -> Publishing -> Add a new pending publisher
+#     Owner:            karankantaria
+#     Repository:       Striate
+#     Workflow name:    publish.yml
+#     Environment:      pypi
+# The environment name must match the `environment:` below. Configure the
+# same for TestPyPI if you want to rehearse.
+
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:            # rehearse the build without publishing
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build wheel + sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The frontend is not in the Python package until this runs. Skipping
+      # it produces a wheel that installs a backend with no UI at all, which
+      # is exactly the release blocker §4.1 was about — and it fails
+      # silently, so the verify step below exists to make it loud.
+      - name: build and stage the frontend
+        run: |
+          npm ci --prefix web
+          npm run --prefix web build
+          python tools/build_ui.py --skip-build
+
+      - name: run the test suite
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" -c constraints-dev.txt
+          python -m pytest -q
+
+      - name: build the distributions
+        run: |
+          pip install build
+          python -m build
+
+      # A wheel that ships no UI is installable, importable, and useless.
+      # Assert the bundle is in there rather than trusting the step above.
+      - name: verify the wheel actually contains the UI
+        run: |
+          python - <<'PY'
+          import pathlib, sys, zipfile
+          wheels = sorted(pathlib.Path("dist").glob("*.whl"))
+          assert len(wheels) == 1, f"expected one wheel, got {wheels}"
+          names = zipfile.ZipFile(wheels[0]).namelist()
+          need = "binviz/webui/index.html"
+          if need not in names:
+              print(f"{wheels[0].name} has no {need}", file=sys.stderr)
+              print("run tools/build_ui.py before building (§4.1)",
+                    file=sys.stderr)
+              sys.exit(1)
+          assets = [n for n in names if n.startswith("binviz/webui/assets/")]
+          assert assets, "webui/assets is empty; index.html would 404 its own JS"
+          licences = [n for n in names if n.endswith("/LICENSE")]
+          assert licences, "no LICENSE in the wheel metadata (§4.3)"
+          print(f"{wheels[0].name}: {len(names)} files, "
+                f"{len(assets)} UI assets, licence present")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  floors:
+    # The lower bounds in pyproject.toml are a promise to users about what
+    # binviz will work with. Testing only the pinned set in
+    # constraints-dev.txt proves the *ceiling* and leaves that promise
+    # unverified — so run the suite once against the oldest version each
+    # range allows. If this job fails, raise the floor; do not delete it.
+    name: oldest supported dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"      # requires-python's own floor
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: install at the declared minimums
+        run: |
+          python -m pip install --upgrade pip
+          cat > /tmp/floors.txt <<'EOF'
+          lief==1.0
+          capstone==5.0.1
+          numpy==2.1
+          fastapi==0.115
+          uvicorn==0.30
+          pillow==10.1
+          EOF
+          pip install -e ".[dev]" -c /tmp/floors.txt
+          pip list
+      - name: build and stage the frontend
+        run: |
+          npm ci --prefix web
+          npm run --prefix web build
+          python tools/build_ui.py --skip-build
+      - run: python -m pytest -q
+
+  publish:
+    name: publish to PyPI
+    # `floors` gates the release too: publishing metadata that claims
+    # compatibility we already know is broken is the §4.2 problem again,
+    # just moved from pins to a lie about ranges.
+    needs: [build, floors]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    # The environment is half of the Trusted Publishing identity — PyPI
+    # checks it — and it is also where a required reviewer can be attached
+    # so a publish cannot happen without a human.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/binviz
+    permissions:
+      # The only permission that matters here: it lets the job mint the
+      # OIDC token PyPI verifies. Note there is no `secrets:` block at all.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        # no `password:` — that is the entire point

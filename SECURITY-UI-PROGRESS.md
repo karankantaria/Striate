@@ -39,12 +39,17 @@ are not mine to do (see "Blocked" below). Security items first.
 | **§3.7** | **404-after-open race** | ✅ **done** |
 | **§2.2/§2.3/§2.5** | **Optional login mode + login screen** | ✅ **done** |
 | **RELEASE §3** | **Striate palette, dark-only, all-monospace** | ✅ **done** |
-| §4.2–4.5 | Pins, LICENSE, Trusted Publishing | ⬜ not started (SECURITY.md ✅, that was §4.4) |
+| **§4.2** | **Loosen the `==` dependency pins** | ✅ **done** |
+| **§4.3** | **LICENSE file is missing** | ✅ **done** |
+| **§4.5** | **PyPI Trusted Publishing** | ✅ **done** |
 
-Test baseline after §2.x: **405 backend** (was 316), **87 frontend**
-(was 37), `npm run build` clean. **All of §1 (S1–S7), all of §2, all of §3,
-and §4.1 are closed**, plus RELEASE.md §3's branding. What remains is
-§4.2/§4.3/§4.5 — dependency pins, the LICENSE file, Trusted Publishing.
+Test baseline: **405 backend** (was 316), **87 frontend** (was 37),
+`npm run build` clean, and both distributions build with the UI and the
+licence in them.
+
+**The work order is complete.** Every item in §0–§4 is closed except §2.4,
+which is not a fix but a checklist to satisfy *when* the pywebview bridge is
+written — see "Next up".
 
 > **Building a wheel now has a required first step:**
 > ```sh
@@ -935,6 +940,144 @@ words — the verdict is spelled out, findings carry a code and a description
 — so severity is never carried by hue alone. Critical is the accent, which
 RELEASE.md assigns to every error signal.
 
+### §4.2 — dependency pins loosened to ranges ✅
+
+**Done 2026-08-06.** `pyproject.toml` pinned every runtime dependency with
+`==`. That is right for a lockfile and wrong for a published distribution:
+`numpy==2.5.1` beside anything else that wants numpy produces an unsolvable
+resolution, and the user cannot fix it from their side.
+
+| Was | Now | Why |
+|---|---|---|
+| `lief==1.0.0` | `>=1.0,<1.1` | The tight one, on purpose |
+| `capstone==5.0.9` | `>=5.0.1,<6` | 5.0.0 is yanked — see below |
+| `numpy==2.5.1` | `>=2.1,<3` | |
+| `fastapi==0.141.1` | `>=0.115,<1` | 0.x: minor bumps can break |
+| `uvicorn==0.52.1` | `>=0.30,<1` | |
+| `pillow==12.3.0` | `>=10.1,<14` | Tiny API surface, ubiquitous package |
+
+Upper bounds sit at the next major. binviz is an *application*, not a
+library — nothing depends on *us*, so a cap here strands nobody, which is
+the usual argument against caps and does not apply.
+
+**lief stays tight** because the work order says so and the reason holds up:
+it is the component whose failure mode is a *plausible but wrong parse*
+rather than an exception, and nothing else in a normal environment depends
+on lief, so a narrow range costs almost no resolution pain. The cost is that
+lief 1.1 will require a binviz release even if it is compatible. Re-run the
+parser tests before widening it.
+
+**`constraints-dev.txt`** is the other half of the trade: the exact versions
+the suite is green against, including transitives.
+
+```sh
+pip install -e ".[dev]" -c constraints-dev.txt
+```
+
+A constraints file rather than a requirements file, so it pins versions
+without *adding* dependencies and stays correct if the extras change. The
+README's quickstart now uses it.
+
+> **Two things found by actually resolving the ranges rather than writing
+> them down.**
+>
+> 1. **`capstone==5.0.0` is yanked on PyPI** ("Reason for being yanked:
+>    wrong"). A floor of `>=5.0` resolves straight onto it — pip warns and
+>    installs it anyway. Floor raised to `5.0.1`.
+> 2. **A floor is a promise, and it was an untested one.** Testing only the
+>    pinned set proves the ceiling. So the release workflow now has an
+>    `oldest supported dependencies` job that installs at the minimum of
+>    every range on Python 3.11 (`requires-python`'s own floor) and runs the
+>    suite. If it fails, raise the floor — do not delete the job. Publishing
+>    is gated on it, because shipping metadata that claims compatibility we
+>    know is broken is the §4.2 problem again, just moved from pins to a lie
+>    about ranges.
+>
+> The floor set was checked locally with a pip dry-run for Python 3.12 and
+> resolves consistently: lief 1.0.0, capstone 5.0.1, numpy 2.1.0,
+> fastapi 0.115.0 with starlette 0.38.6, uvicorn 0.30.0, Pillow 10.1.0.
+
+**A version bug this surfaced.** `pyproject.toml` said `0.0.1`,
+`__init__.py` said `0.0.1`, and `cache.TOOL_VERSION` said `0.0.3` — and it
+is the last of those the tool actually reports, in `/api/config`, in
+`meta.json`, and in the login screen footer. So `pip install binviz` would
+have shipped metadata claiming a version the tool disagreed with.
+
+Fixed by making `binviz.__version__` the one place the distribution version
+is written, read by `pyproject.toml` through
+`[tool.setuptools.dynamic]`, and set to `0.0.3` to match what the tool has
+been reporting all along.
+
+> **`TOOL_VERSION` is deliberately *not* unified with it.** It feeds
+> `params_fingerprint`, so changing it invalidates every cached analysis on
+> every install — a release that only touches CSS would silently throw away
+> a 5 GiB cache and re-analyse everything. They are two different facts that
+> happen to read the same today. Both now say so in a comment.
+
+### §4.3 — LICENSE ✅
+
+**Done 2026-08-06.** `pyproject.toml` declared `license = "MIT"` with no MIT
+text anywhere, which is legally ambiguous and means GitHub's detection shows
+nothing — so the repo read as "all rights reserved" to anyone evaluating it.
+
+`LICENSE` added with the MIT text and a copyright line (2026 Karan
+Kantaria), plus `license-files = ["LICENSE"]` so it travels in the
+distributions rather than only in the repo. `build-system.requires` bumped to
+`setuptools>=77`, which is what PEP 639's `license`/`license-files` need.
+
+Verified in the built artifacts, not assumed: the wheel carries
+`binviz-0.0.3.dist-info/licenses/LICENSE` and the metadata reads
+`License-Expression: MIT` + `License-File: LICENSE`; the sdist carries the
+file too. The release workflow asserts the licence is present as part of its
+wheel check, so a future packaging change cannot quietly drop it.
+
+Also added `[project.urls]` — Homepage, Source, Issues, and Security
+pointing at `SECURITY.md` — so the PyPI page has a disclosure route on it
+rather than only in the repo.
+
+### §4.5 — PyPI Trusted Publishing ✅
+
+**Done 2026-08-06.** `.github/workflows/publish.yml`, publishing via OIDC
+with **no API token anywhere in the repository or its secrets**. PyPI
+verifies a short-lived identity minted by GitHub for this workflow in this
+repository; there is nothing long-lived to steal, leak in a log, or forget
+to rotate. For a tool in the security space that matters more than usual —
+§4.6's point is that the audience is malware analysts, so a stolen publish
+token would hand an attacker's code to exactly the population that opens
+hostile files for a living.
+
+Three jobs: `build` (stage the UI, run the suite, build both distributions,
+verify the wheel), `floors` (§4.2's minimum-version run), and `publish`,
+which needs both and only fires on a published release.
+
+**The wheel check is the §4.1 trap, closed properly.** `tools/build_ui.py`
+must run before `python -m build` or the wheel ships a backend with no
+frontend — and it fails *silently*, which is what made §4.1 a release
+blocker in the first place. The workflow now asserts the built wheel
+contains `binviz/webui/index.html`, a non-empty `webui/assets/`, and the
+licence, and fails the release if not. A documented step relies on someone
+remembering; this does not.
+
+**One-time setup on PyPI before this can run** — the workflow's header
+repeats it, but for the record:
+
+```
+PyPI -> project -> Publishing -> Add a new pending publisher
+  Owner: karankantaria   Repository: Striate
+  Workflow: publish.yml  Environment: pypi
+```
+
+The environment name is half of the identity PyPI checks, and it is also
+where a required reviewer can be attached so a publish cannot happen without
+a human approving it.
+
+Verified locally as far as it can be without a release: both distributions
+build clean, the wheel contains the UI and the licence, and a **clean venv
+install of the built wheel serves a working authenticated app** — `/` 200
+with the token injected into the page, `/api/config` answering with that
+token, and the CSS asset resolving. The OIDC exchange itself can only be
+verified by publishing.
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -962,11 +1105,21 @@ view, give it a `grid-area`, add it to a workspace's `panes`, add its slot
 to that workspace's `grid-template-areas`. The tests will tell you if you
 forgot one of those.
 
-**All of §1, §2, §3 and §4.1 are now closed**, plus RELEASE.md §3's
-branding. One group remains:
+**The work order is done.** §0 through §4 are all closed. What is left is
+not a fix list any more — it is the two things the work order deliberately
+scoped *out*, plus a release decision that is the repo owner's:
 
-- **§4.2/§4.3/§4.5** loosen the `==` dependency pins, add the MIT LICENSE
-  text (`pyproject.toml` declares MIT but no file exists), Trusted Publishing.
+- **Publish.** The pipeline is built and verified as far as it can be
+  without publishing: `binviz passwd` / `binviz serve` both work from a
+  clean-venv wheel install, and the release workflow gates on the suite,
+  the floors, and the wheel actually containing the UI. What it needs is the
+  one-time PyPI pending-publisher setup (in the workflow header) and a
+  GitHub release. **Nothing is committed or pushed** — that is yours.
+- **`SECURITY-UI-WORKORDER.md` is still committed to a repo with a public
+  remote and still contains verified reproduction detail for S1 and S2.**
+  Every finding it describes is now fixed, so the argument for keeping it
+  private is much weaker than it was — but it is a deliberate call, not an
+  oversight, and it is yours to make.
 
 **§2.4 is now the only thing between here and the desktop app.** Its
 preconditions are all satisfied — S2 is fixed, the CSP is in place, and the

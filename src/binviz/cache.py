@@ -23,6 +23,11 @@ from pathlib import Path
 
 import numpy as np
 
+#: The **analysis** version, not the distribution version (that one lives in
+#: `binviz.__version__`). It feeds `params_fingerprint`, so bumping it makes
+#: every cached analysis stale and forces a full re-analysis on next open.
+#: Bump it when analysis *output* changes; leave it alone for a release that
+#: only touches the UI or packaging. The two happen to read the same today.
 TOOL_VERSION = "0.0.3"   # 0.0.3: trigram artifact cap + sidecar meta (P12)
 SCHEMA = 1
 

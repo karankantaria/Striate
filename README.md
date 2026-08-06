@@ -24,7 +24,9 @@ Phase 3 complete.
 
 ```sh
 python -m venv .venv
-.venv/Scripts/pip install -e ".[dev]"     # POSIX: .venv/bin/pip
+# -c pins to the exact versions the suite is green against; pyproject.toml
+# publishes ranges, so without it you get whatever resolves today
+.venv/Scripts/pip install -e ".[dev]" -c constraints-dev.txt   # POSIX: .venv/bin/pip
 
 # build the ground-truth corpus (uses zig cc from the ziglang pip package;
 # needs UPX on PATH, in $UPX, or unzipped into corpus/tools/upx-*/)
@@ -84,6 +86,32 @@ Other flags: `--token` to pin a token across restarts (useful with the Vite
 dev proxy, which reads `BINVIZ_TOKEN`), `--port`, `--cache`, and `--no-auth`
 for CI. `--no-auth` prints a banner telling you what it turned off; do not
 use it on a machine you share.
+
+### Signing in
+
+By default there is no login screen and nothing to copy: the server mints a
+session token and injects it into the page it serves, so opening
+`http://127.0.0.1:8000/` just works while every API call is still
+authenticated.
+
+On a machine you share, turn on the sign-in screen:
+
+```sh
+binviz passwd                 # prompts; scrypt digest, mode 0600
+binviz serve --auth local
+```
+
+If you skip `binviz passwd`, the first sign-in claims the install — the
+startup banner warns about that, because whoever reaches the port first
+becomes the account.
+
+The login screen is **not** the security boundary; the token check on every
+`/api` route is. Anything on the machine can skip the form and call the API
+directly, which is exactly why the token exists. See `SECURITY.md`.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
 
 Plates live in `docs/plates/` — regenerate with `python docs/make_plates.py`.
 Start with `image_rgb_bars.png` next to `image_rgb_bars_wrong_stride.png`
