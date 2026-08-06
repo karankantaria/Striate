@@ -37,6 +37,7 @@ export interface Status {
   artifacts: Record<string, string> | null; // model|signals|hist|trigram|functions
   tool_version: string | null;
   source: { path: string; stored: boolean } | null;
+  progress: Record<string, number> | null;  // running artifact fraction (P12)
 }
 
 export interface SignalInfo {

@@ -26,6 +26,14 @@ DEFAULT_WINDOW = 8
 DEFAULT_MAX_SAMPLES = 1_000_000
 # a single k-mer repeated n times implies n^2 pairs; bound the work and say so
 EXACT_PAIR_BUDGET = 40_000_000
+# P12 scale bounds. Both the range-2 index and the range-1 sampling
+# permutation are O(n) in uint64s: a whole-file axis on a 2 GiB file is a
+# ~17 GB allocation for each (measured MemoryError on 16 GB RAM). Above
+# INDEX_MAX_POSITIONS range 2 is streamed in tiles of this size per pass
+# (transient ~10 tile-bytes, nothing persistent); above ROW_SAMPLE_MAX
+# range 1 is represented by a fixed random row subset.
+INDEX_MAX_POSITIONS = 1 << 24    # 16.7M positions, ~270 MB index when built
+ROW_SAMPLE_MAX = 1 << 22         # 4.2M sampled rows, 33 MB of hashes
 
 
 def _kmer_hashes(a: np.ndarray, k: int) -> np.ndarray:
@@ -68,6 +76,40 @@ def _distinct_group_cells(hashes: np.ndarray, n: int,
     return hs, cs
 
 
+def _collapse_cells(hashes: np.ndarray, cells: np.ndarray):
+    """Distinct (hash, cell) pairs with multiplicities, sorted by hash.
+
+    The join that consumes this emits one row per distinct *combination*,
+    weighted by the product of multiplicities — so a degenerate k-mer (a
+    zero run) costs at most cells_x x cells_y emissions instead of one per
+    matching pair. On a 2 GiB mixed file the naive pair expansion measured
+    819 billion pairs in one tile (a 5.96 TiB np.repeat) — the collapse is
+    what makes huge self-similar ranges tractable at identical output.
+    """
+    order = np.lexsort((cells, hashes))
+    hs, cs = hashes[order], cells[order]
+    if hs.size == 0:
+        return hs, cs.astype(np.int32), np.zeros(0, dtype=np.int64)
+    new = np.r_[True, (hs[1:] != hs[:-1]) | (cs[1:] != cs[:-1])]
+    heads = np.flatnonzero(new)
+    mult = np.diff(np.r_[heads, hs.size]).astype(np.int64)
+    return hs[heads], cs[heads].astype(np.int32), mult
+
+
+def _sample_rows(rng: np.random.Generator, n: int, size: int) -> np.ndarray:
+    """A sorted random subset of range(n) without replacement, deterministic
+    for a given rng state. Never materialises a permutation of n (P12: a
+    2 GiB axis makes that a 17 GB array)."""
+    if size >= n:
+        return np.arange(n, dtype=np.int64)
+    rows = np.unique(rng.integers(0, n, int(size * 1.05) + 16,
+                                  dtype=np.int64))[:size]
+    while rows.size < size:   # collision top-up; astronomically rare
+        extra = rng.integers(0, n, size, dtype=np.int64)
+        rows = np.unique(np.concatenate([rows, extra]))[:size]
+    return rows
+
+
 @dataclass
 class DotPlotAccumulator:
     """Progressive sampling state — the reference's advance_mat + pts_i_.
@@ -82,57 +124,131 @@ class DotPlotAccumulator:
     per-call work bounded, and makes `progress` mean something a user can
     act on: the fraction of rows that are now fully resolved.
 
+    Two P12 scale bounds change shape, not meaning:
+    - n1 > ROW_SAMPLE_MAX: a fixed random row subset stands in for range 1
+      (`rows_sampled` in the meta says so).
+    - n2 > INDEX_MAX_POSITIONS: no persistent index; each advance() streams
+      one tile of range 2 past the row hashes, and progress counts tiles.
+
     The service (P6) keys these by (range, params, seed) and advances them
     across requests; each call raises `progress` and the resolved count.
     """
 
     key: tuple
-    matrix: np.ndarray          # uint32 (h, w)
+    matrix: np.ndarray          # int64 (h, w) pair counts
     n1: int = 0
     n2: int = 0
-    resolved: int = 0           # positions in range 1 resolved so far
+    resolved: int = 0           # sampled rows fully resolved so far
     hits: int = 0               # matching (position, position) pairs found
-    cursor: int = 0
+    cursor: int = 0             # advance() calls; in tiled mode, tiles done
     _rng: np.random.Generator = field(default=None, repr=False)
     _order: np.ndarray = field(default=None, repr=False)
-    _index: tuple = field(default=None, repr=False)
+    _index: tuple = field(default=None, repr=False)   # collapsed (h, c, m)
+    _rows: np.ndarray = field(default=None, repr=False)
+    _row_groups: tuple = field(default=None, repr=False)  # collapsed rows
+
+    @property
+    def tiled(self) -> bool:
+        return self.n2 > INDEX_MAX_POSITIONS
+
+    @property
+    def n_tiles(self) -> int:
+        return max(1, -(-self.n2 // INDEX_MAX_POSITIONS))
+
+    @property
+    def n_rows(self) -> int:
+        return min(self.n1, ROW_SAMPLE_MAX)
 
     def build_index(self, a: np.ndarray, k: int,
                     off1: int, off2: int) -> None:
-        """One-time k-mer index over range 2, plus a sampling order for range 1."""
+        """One-time collapsed k-mer index over range 2, plus a sampling
+        order for range 1. The index holds distinct (hash, cell) groups
+        with multiplicities — bounded by n2 and usually far smaller."""
+        h_mat, _w = self.matrix.shape
         h2 = _kmer_hashes(a[off2:off2 + self.n2 + k - 1], k)
-        order2 = np.argsort(h2, kind="stable")
-        self._index = (h2[order2], order2)
-        self._order = self._rng.permutation(self.n1)
+        cells2 = _cells(np.arange(self.n2, dtype=np.int64), self.n2, h_mat)
+        self._index = _collapse_cells(h2, cells2)
+        self._rows = _sample_rows(self._rng, self.n1, ROW_SAMPLE_MAX)
+        self._order = self._rng.permutation(self._rows.size)
 
     def advance(self, a: np.ndarray, k: int, off1: int, off2: int,
                 n_samples: int) -> None:
+        if self.tiled:
+            self._advance_tile(a, k, off1, off2)
+            return
         if self._index is None:
             self.build_index(a, k, off1, off2)
-        h, w = self.matrix.shape
+        _h, w = self.matrix.shape
         take = self._order[self.resolved:self.resolved + n_samples]
         if take.size == 0:
             return
-        h1 = _kmer_hashes_at(a, off1, take, k)
-        sorted2, order2 = self._index
-        lo = np.searchsorted(sorted2, h1, "left")
-        hi = np.searchsorted(sorted2, h1, "right")
-        counts = hi - lo
-        found = counts > 0
-        if found.any():
-            xs = _cells(take[found], self.n1, w)
-            reps = counts[found]
-            # expand each sampled position to all of its matches
-            js = _ranges(lo[found], reps)
-            ys = _cells(order2[js], self.n2, h)
-            np.add.at(self.matrix, (ys, np.repeat(xs, reps)), 1)
-            self.hits += int(reps.sum())
+        pos = self._rows[take]
+        h1 = _kmer_hashes_at(a, off1, pos, k)
+        c1 = _cells(pos, self.n1, w)
+        self._join(_collapse_cells(h1, c1), self._index, transpose=False)
         self.resolved += int(take.size)
         self.cursor += 1
 
+    def _advance_tile(self, a: np.ndarray, k: int,
+                      off1: int, off2: int) -> None:
+        """One tile of range 2 joined against the (fixed) collapsed row
+        groups. The tile's hashes are the only large transient and die on
+        return."""
+        if self._row_groups is None:
+            _h, w = self.matrix.shape
+            self._rows = _sample_rows(self._rng, self.n1, ROW_SAMPLE_MAX)
+            h1 = _kmer_hashes_at(a, off1, self._rows, k)
+            c1 = _cells(self._rows, self.n1, w)
+            self._row_groups = _collapse_cells(h1, c1)
+        t = self.cursor
+        if t >= self.n_tiles:
+            return
+        h_mat, _w = self.matrix.shape
+        base = t * INDEX_MAX_POSITIONS
+        n_t = min(INDEX_MAX_POSITIONS, self.n2 - base)
+        h2 = _kmer_hashes(a[off2 + base:off2 + base + n_t + k - 1], k)
+        cells2 = _cells(base + np.arange(n_t, dtype=np.int64),
+                        self.n2, h_mat)
+        self._join(_collapse_cells(h2, cells2), self._row_groups,
+                   transpose=True)
+        self.cursor += 1
+        self.resolved = (self.n_rows * min(self.cursor, self.n_tiles)
+                         // self.n_tiles)
+
+    def _join(self, probe: tuple, index: tuple, *, transpose: bool) -> None:
+        """Weighted join of two collapsed (hash, cell, mult) group sets.
+
+        Emits one matrix update per distinct (cell, cell) combination,
+        weighted mult_probe x mult_index — the exact pair count, computed
+        without materialising pairs (see _collapse_cells). `transpose`
+        says whether probe cells are the y axis (tiled) or x axis."""
+        ph, pc, pm = probe
+        ih, ic, im = index
+        if ph.size == 0 or ih.size == 0:
+            return
+        lo = np.searchsorted(ih, ph, "left")
+        hi = np.searchsorted(ih, ph, "right")
+        counts = hi - lo
+        found = counts > 0
+        if not found.any():
+            return
+        reps = counts[found]
+        js = _ranges(lo[found], reps)
+        weights = np.repeat(pm[found], reps) * im[js]
+        probe_cells = np.repeat(pc[found], reps)
+        index_cells = ic[js]
+        ys, xs = ((probe_cells, index_cells) if transpose
+                  else (index_cells, probe_cells))
+        np.add.at(self.matrix, (ys, xs), weights)
+        self.hits += int(weights.sum())
+
     @property
     def progress(self) -> float:
-        return 1.0 if self.n1 <= 0 else min(1.0, self.resolved / self.n1)
+        if self.n1 <= 0:
+            return 1.0
+        if self.tiled:
+            return min(1.0, self.cursor / self.n_tiles)
+        return min(1.0, self.resolved / max(1, self.n_rows))
 
 
 def _kmer_hashes_at(a: np.ndarray, base: int, pos: np.ndarray,
@@ -205,19 +321,31 @@ class DotPlotSurface:
             "progress": acc.progress, "seed": int(p.get("seed", 0)),
             "cursor": acc.cursor,
         })
+        if acc.tiled:
+            meta["tiled"] = True
+            meta["tiles"] = acc.n_tiles
+            meta["tiles_done"] = min(acc.cursor, acc.n_tiles)
+        if acc.n_rows < n1:
+            meta["rows_sampled"] = acc.n_rows
+            meta["warnings"].append(
+                f"rows sampled: {acc.n_rows:,} random rows stand in for "
+                f"{n1:,} positions on axis 1")
         if acc.progress < 1.0:
             meta["warnings"].append(
-                f"sampled: {acc.resolved:,} of {n1:,} positions resolved "
-                f"({100 * acc.progress:.1f}%); absence of dots in unresolved "
-                "columns is not evidence of absence of self-similarity")
+                f"sampled: {acc.resolved:,} of {acc.n_rows:,} sampled rows "
+                f"resolved ({100 * acc.progress:.1f}%); absence of dots in "
+                "unresolved columns is not evidence of absence of "
+                "self-similarity")
         return self._finish(acc.matrix, meta, w, h)
 
     @staticmethod
     def accumulator(req: SurfaceRequest, w: int, h: int,
                     n1: int, n2: int) -> DotPlotAccumulator:
         seed = int(req.params.get("seed", 0))
+        # int64: weighted joins accumulate true pair counts, and a
+        # degenerate k-mer over a huge range overflows uint32 per cell
         return DotPlotAccumulator(
-            key=req.cache_key(), matrix=np.zeros((h, w), dtype=np.uint32),
+            key=req.cache_key(), matrix=np.zeros((h, w), dtype=np.int64),
             n1=n1, n2=n2, _rng=np.random.default_rng(seed))
 
     def _exact(self, a, k, off1, n1, off2, n2, w, h):

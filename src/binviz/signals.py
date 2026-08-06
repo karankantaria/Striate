@@ -45,8 +45,13 @@ SIGNALS: dict[str, tuple[int, int, str, str, float, float]] = {
 }
 
 
-def compute_signals(buf, names: list[str] | None = None) -> dict[str, Signal]:
-    """Compute named signals, sharing one counting pass per (window, stride)."""
+def compute_signals(buf, names: list[str] | None = None,
+                    progress=None) -> dict[str, Signal]:
+    """Compute named signals, sharing one counting pass per (window, stride).
+
+    `progress`, when given, is called with an overall fraction in (0, 1],
+    weighted by each pass's window count (the 256-byte pass is ~16x the
+    4096-byte pass's work)."""
     names = list(SIGNALS) if names is None else names
     unknown = [n for n in names if n not in SIGNALS]
     if unknown:
@@ -55,10 +60,19 @@ def compute_signals(buf, names: list[str] | None = None) -> dict[str, Signal]:
     for n in names:
         w, s, *_ = SIGNALS[n]
         groups.setdefault((w, s), []).append(n)
+    weights = {g: max(1, len(buf) // g[1]) for g in groups}
+    w_total = sum(weights.values())
+    w_done = 0
     out: dict[str, Signal] = {}
     for (w, s), members in groups.items():
         keys = tuple({SIGNALS[n][2] for n in members})
-        stats = window_stats(buf, w, s, which=keys)
+        cb = None
+        if progress is not None:
+            base, share = w_done, weights[(w, s)]
+            cb = lambda f, base=base, share=share: \
+                progress((base + f * share) / w_total)
+        stats = window_stats(buf, w, s, which=keys, progress=cb)
+        w_done += weights[(w, s)]
         for n in members:
             _, _, key, unit, lo, hi = SIGNALS[n]
             out[n] = Signal(name=n, unit=unit, values=stats[key],

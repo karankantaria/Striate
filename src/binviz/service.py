@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import threading
 import time
 from collections import OrderedDict
@@ -32,6 +33,7 @@ from .loader import MappedFile, sha256_file
 MAX_BYTES_READ = 1 << 20        # /bytes hard cap
 DEFAULT_SIGNAL_BINS = 2000
 DOTPLOT_LRU = 16                # in-memory progressive accumulators
+DOTPLOT_ACC_VERSION = 2         # 2: int64 weighted pair-count matrix (P12)
 
 
 # --------------------------------------------------------------- helpers
@@ -127,9 +129,12 @@ class _DotPlots:
             if cache.exists(rel):
                 try:
                     saved = np.load(cache.path(rel))
-                    if (int(saved["n1"]) == n1 and int(saved["n2"]) == n2
+                    if ("version" in saved
+                            and int(saved["version"]) == DOTPLOT_ACC_VERSION
+                            and int(saved["n1"]) == n1
+                            and int(saved["n2"]) == n2
                             and saved["matrix"].shape == acc.matrix.shape):
-                        acc.matrix = saved["matrix"].copy()
+                        acc.matrix = saved["matrix"].astype(np.int64)
                         acc.resolved = int(saved["resolved"])
                         acc.hits = int(saved["hits"])
                         acc.cursor = int(saved["cursor"])
@@ -146,7 +151,8 @@ class _DotPlots:
         rel = f"dotplot_acc/{_dotplot_key(req)}.npz"
         bio = io.BytesIO()
         np.savez(bio, matrix=acc.matrix, resolved=acc.resolved,
-                 hits=acc.hits, cursor=acc.cursor, n1=acc.n1, n2=acc.n2)
+                 hits=acc.hits, cursor=acc.cursor, n1=acc.n1, n2=acc.n2,
+                 version=DOTPLOT_ACC_VERSION)
         cache.write_bytes(rel, bio.getvalue())
 
 
@@ -222,13 +228,30 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
     async def open_binary(request: Request):
         ctype = request.headers.get("content-type", "")
         if ctype.startswith("application/octet-stream"):
-            body = await request.body()
-            if not body:
-                raise HTTPException(400, "empty upload")
-            sha = hashlib.sha256(body).hexdigest()
-            cache = BinaryCache(sha, root())
-            if not cache.exists("file.bin"):
-                cache.write_bytes("file.bin", body)
+            # Streamed to disk while hashing: buffering the body would hold
+            # the whole upload in RAM, and files can be larger than RAM (P12)
+            root_dir = Path(root())
+            root_dir.mkdir(parents=True, exist_ok=True)
+            h = hashlib.sha256()
+            n = 0
+            fd, tmp_path = tempfile.mkstemp(dir=root_dir, suffix=".upload")
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    async for chunk in request.stream():
+                        h.update(chunk)
+                        n += len(chunk)
+                        f.write(chunk)
+                if n == 0:
+                    raise HTTPException(400, "empty upload")
+                sha = h.hexdigest()
+                cache = BinaryCache(sha, root())
+                dst = cache.path("file.bin")
+                if not dst.exists():
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(tmp_path, dst)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
             state = app.state.jobs.ensure(
                 sha, str(cache.path("file.bin")), root(), stored=True)
             return {"id": sha, "state": state}
@@ -268,7 +291,7 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
         meta = get_cache(id).meta() or {}
         return {k: meta.get(k) for k in
                 ("sha256", "size", "state", "error", "artifacts",
-                 "tool_version", "source")}
+                 "tool_version", "source", "progress")}
 
     @app.get("/api/{id}/model")
     def model(id: str):
@@ -417,15 +440,25 @@ def create_app(cache_root: str | os.PathLike | None = None) -> FastAPI:
                                 }))
             pts = cache.memmap("trigram.sparse", TRIGRAM_DTYPE)
             pts = pts.reshape(-1, 4)
+            # the stored artifact itself may be a densest-first prefix of
+            # the true point set (P12 size cap); the sidecar has the truth
+            side = {}
+            if cache.exists("trigram.meta.json"):
+                try:
+                    side = cache.read_json("trigram.meta.json")
+                except (OSError, json.JSONDecodeError):
+                    side = {}
+            total_points = int(side.get("total_points", len(pts)))
             # count-descending on disk: threshold and limit are prefix slices
             cut = int(np.searchsorted(-pts[:, 3], -threshold, "right"))
-            capped = bool(limit) and cut > limit
-            if capped:
+            capped = (bool(limit) and cut > limit) \
+                or bool(side.get("capped", False))
+            if limit and cut > limit:
                 cut = limit
             return Response(pts[:cut].tobytes(),
                             media_type="application/octet-stream",
                             headers=_meta_headers({
-                                "points": cut, "total_points": len(pts),
+                                "points": cut, "total_points": total_points,
                                 "threshold": threshold, "dtype": "u8",
                                 "capped": capped,
                                 "layout": "[x,y,z,count] i32",

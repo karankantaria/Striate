@@ -4,7 +4,7 @@
 > the "how to run" section if it changed, and the gotchas list. `PLAN.md` is
 > the full design doc; this file is the fast on-ramp for a new session.
 
-## Status (updated 2026-08-06, end of Phase 11)
+## Status (updated 2026-08-06, end of Phase 12)
 
 | Phase | What | State |
 |---|---|---|
@@ -19,8 +19,8 @@
 | P8 | 2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate) | ✅ done |
 | P9 | Image view (stride suggester, 87 modes), dot plot (progressive), virtualised hex viewer | ✅ done |
 | P10 | CFG view (elk layout in workers, Canvas2D, uncertainty encoding, function list) | ✅ done |
-| **P11** | **Triage verdict + clickable findings panel + file navigation** | ✅ **done (this session)** |
-| P12 | Scale hardening | trigger-driven, enter with a measured number |
+| P11 | Triage verdict + clickable findings panel + file navigation | ✅ done |
+| **P12** | **Scale hardening (measured on 2 GiB; triggered items only)** | ✅ **done (this session)** |
 
 ## How to run
 
@@ -43,7 +43,7 @@ Open http://localhost:5173 and paste an absolute path (e.g.
 
 Tests:
 ```bash
-.venv/Scripts/python -m pytest -q         # backend, 300 passing (perf marked-out)
+.venv/Scripts/python -m pytest -q         # backend, 316 passing (perf marked-out)
 cd web && npm test                        # 37 node --test units (hilbert/off↔va/colormap/transforms/hexutil/cfgutil)
 cd web && npm run build                   # tsc --noEmit (strict) + vite build
 ```
@@ -349,12 +349,77 @@ collapses to the diagonal on arrival); warm next/prev paint 126 ms
     `SelectionStore.dtype` — pixel formats (rgb8, bayer…) are a different
     axis than element dtypes; the mode picker is its own control.
 
-## Where P12 plugs in (trigger-driven — enter with a measured number)
+## What Phase 12 built (scale hardening — measured triggers only)
 
-Every P12 item in PLAN §Phase 12 is an optimisation behind a measured
-threshold: >1 GiB files (chunked analysis), >50k-node call graph (WebGL),
-signal pyramid (only if refetch-on-zoom lags), sliding-window entropy
-(only if the 2 s target is missed), tiled dot-plot accumulators. None are
-currently triggered by the corpus. Remaining PLAN open questions: r2
-oracle backend shipping (decide from stripped recall), 3-D trigram vs
-three 2-D projections (decide from the plates).
+Method: PLAN §P12 forbids speculative optimisation, so the session started
+by *measuring* a 2 GiB mixed file (valid ELF head + 1.2 GiB tiled ELF +
+512 MiB urandom + 256 MiB zeros + 64 MiB ascii; generator logic preserved
+in `tests/test_phase12.py`'s docstring) on a 16 GB Windows machine. What
+tripped got fixed; what didn't got its number recorded and no code.
+
+**Triggered and fixed** (backend `stats.py`/`cache.py`/`service.py`/
+`surfaces/dotplot.py`, tests in `tests/test_phase12.py`):
+- `stats.histogram()` ran `np.bincount` over the whole array; bincount
+  casts u8 → int64 internally, i.e. 8× the file in RAM. Measured: the
+  `hist` step committed **16.75 GiB** on the 2 GiB file and paged the
+  machine to a crawl. Now chunked (`_TARGET_CHUNK_ELEMS`), saturating at
+  u32 max to keep the `<u4` wire format honest for >4 GiB inputs.
+- Trigram picked sparse-vs-dense from the **first chunk only**; a file
+  that opens binary-like and turns random keeps sparse while the random
+  section explodes the merge. Measured: **85 s, +10.3 GiB commit**.
+  `_trigram` now switches to the blocked-dense table mid-stream when any
+  chunk exceeds `_TRIGRAM_SPARSE_MAX_UNIQUE` or the running total exceeds
+  `_TRIGRAM_SPARSE_TOTAL_MAX` (2^25 keys ≈ 0.8 GB merge peak, the new
+  worst case). Re-measured after the fix: see the numbers below.
+- Whole-file dot-plot axes: the range-2 k-mer index and the range-1
+  permutation are each O(n) uint64 — **~17 GB apiece** at 2 GiB, a
+  MemoryError in practice. `DotPlotAccumulator` now bounds both: above
+  `ROW_SAMPLE_MAX` (2^22) axis 1 is a fixed random row subset
+  (`meta.rows_sampled`); above `INDEX_MAX_POSITIONS` (2^24) there is no
+  persistent index at all — each advance() streams one tile of range 2
+  past the row hashes and `progress` counts tiles (`meta.tiled/tiles/
+  tiles_done`). At 100% progress the tiled matrix is *bit-identical* to
+  the untiled one (tested) — tiling changes memory, not meaning.
+- Trigram artifact cap: 2 GiB mixed wrote a **256 MiB** trigram.sparse.
+  Now capped at `TRIGRAM_STORE_MAX_POINTS` (2^22 points = 64 MiB,
+  count-descending so the cap keeps the densest); `trigram.meta.json`
+  records `{total_points, stored_points, capped}` and `/hist3` reports
+  `capped: true` + the true total. TOOL_VERSION bumped to 0.0.3 (all
+  pre-P12 caches invalidate).
+- Per-step progress: signals/hist/trigram/triage report a fraction via a
+  throttled writer (`cache.StepProgress`, ≥0.5 s between meta.json
+  writes) → `meta.progress` → `/status` → the status chip shows
+  "analyzing 2/6 · trigram 43%…". Triage progress is byte-weighted
+  *within* regions (a 2 GiB overlay is one region — per-region ticks
+  would jump 0→95%).
+- `/api/open` uploads streamed to a temp file while hashing instead of
+  `await request.body()` (whole upload in RAM); uploads can now exceed
+  RAM.
+
+**Measured and NOT triggered** (numbers recorded, no code — the PLAN's
+own rule):
+- Signal binning (`/signal` refetch-on-zoom): 57–75 ms for the full 2 GiB
+  entropy_256 series (8.4M windows) at n=2000, ~1 ms for a 1% zoom. No
+  signal pyramid.
+- Sliding-window entropy: signals on 2 GiB took 17.7 s ≈ 0.86 s/100 MB —
+  the P2 "2 s per 100 MB" target holds linearly. No incremental counts.
+- WebGL graph: no whole-program call-graph view exists (P10 renders one
+  function's CFG at a time; corpus max is tens of blocks). No trigger.
+- LIEF parse transiently commits ~2× file size (+4 GiB at 2 GiB, 7.6 s) —
+  LIEF-internal, survivable at the 2 GiB target, left alone. Known cost:
+  the model step is the remaining per-open transient on huge files.
+
+2 GiB step times after the fixes (same machine; commit-charge deltas —
+working set additionally shows ~2 GiB of reclaimable file-backed mmap
+pages during the streaming steps):
+sha256 1.9 s · model 7.6 s (+4 GiB transient, LIEF) · signals 17.7 s ·
+hist 22.4 s (+0.03 GiB, was +16.75 GiB) · trigram 33.3 s (+0.83 GiB, was
+85 s / +10.3 GiB) · functions 0.9 s · triage 14.3 s. Full `analyze()`
+end-to-end: 88.7 s warm, state=complete, progress ticking live.
+trigram.sparse: 64 MiB capped (was 256 MiB). Whole-file dot plot (both
+axes = the 2 GiB file, previously MemoryError): first pass 8.6 s, then
+~3.8 s per tile, 128 tiles, per-pass tile progress in the meta.
+
+Remaining PLAN open questions (unchanged): r2 oracle backend shipping
+(decide from stripped recall), 3-D trigram vs three 2-D projections
+(decide from the plates).
