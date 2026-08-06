@@ -53,6 +53,18 @@ wheel is built — a wheel without that step installs a backend and no UI, and
 does so **silently**. The release workflow asserts the bundle is in the
 built wheel for exactly that reason.
 
+**Freezing.** `packaging/binviz.spec` is §1's "build it yourself" half:
+`pip install pyinstaller`, `python tools/build_ui.py`, `pyinstaller
+packaging/binviz.spec` → `dist/binviz/` (~100 MB, numpy and lief). The
+entry point is `packaging/launcher.py`, which is the wheel's CLI with one
+addition — **no argv means `app`**, because a double-clicked executable
+passes none and bare `binviz` exits 2 into a console that closes
+instantly. onedir, `upx=False` and `console=True` are all argued in the
+spec's docstring and pinned by `tests/test_packaging.py`; the short
+version is that each safe value costs something, so drift has a
+direction. The spec **refuses to build** without a staged frontend — the
+§4.1 failure again, and locally there is no release workflow to catch it.
+
 **Authentication.** Every `/api` route requires a token. How the browser
 *gets* it is the only thing that varies:
 
@@ -190,18 +202,21 @@ branding in one repo is how they drift.
 
 Nothing here is a bug. In rough order:
 
-1. **PyInstaller spec** — `packaging/binviz.spec`, the one piece of §1's
-   "build it yourself" promise that does not exist yet.
-   - **onedir, not onefile**: onefile self-extracts on every launch — slow,
-     and more AV-suspicious for exactly the reasons in §1.
-   - `icon=packaging/icons/icon.ico`; bundle the staged frontend
-     (`src/binviz/webui/`) and icons as data.
-   - numpy/pillow have official hooks; capstone bundles its own DLL; lief
-     may need `--collect-all lief`. Expect 80–150 MB, dominated by numpy and
-     lief.
-   - Add README instructions for building it yourself.
-2. **macOS `.icns`** from `icon-1024.png` with `iconutil`, on a Mac.
-3. **First release** — see §7, which is owner-only.
+1. **macOS `.icns`** from `icon-1024.png` with `iconutil`, on a Mac. The
+   spec's darwin branch already looks for `packaging/icons/icon.icns` and
+   builds the `.app` without an icon when it is absent, so this is the only
+   thing between here and a branded macOS bundle.
+2. **First release** — see §7, which is owner-only.
+
+Done, and described in §2: the **PyInstaller spec** — `binviz.spec` +
+`launcher.py` in `packaging/`, README instructions, and
+`tests/test_packaging.py`. Built and run on Windows: 99 MB, with `probe`,
+`triage`, `serve` (UI mounted, deep links surviving a refresh, `/api`
+still 401 without the token) and the desktop window all exercised from
+the frozen bundle. numpy and pillow needed nothing beyond their official
+hooks as predicted; `collect_all` was required for capstone and lief as
+expected, and also for the pythonnet stack pywebview reaches WebView2
+through, which no import analysis can see.
 
 ---
 
@@ -312,7 +327,8 @@ constraints-dev.txt     exact versions the suite is green against
 .github/workflows/      publish.yml — Trusted Publishing
 packaging/
   icons/                canonical branding (§3)
-  <binviz.spec>         PyInstaller spec — to be written (§5)
+  binviz.spec           PyInstaller spec: onedir desktop build (§2)
+  launcher.py           its entry point — the CLI, defaulting to `app`
 tools/build_ui.py       stages web/dist + icons into the package
 web/
   design/login.html     login screen design reference

@@ -107,6 +107,35 @@ The window exposes exactly one function to the page — a native file picker —
 and nothing else. See `src/binviz/app.py` for why that list is as short as
 it is.
 
+### Building a standalone app
+
+Releases ship a wheel and nothing else. An unsigned frozen Python
+executable that bundles capstone and lief and exists to dissect packed
+binaries is exactly the profile SmartScreen and AV heuristics
+false-positive on — so instead of shipping one, the repo carries what you
+need to build it yourself, which sidesteps code signing entirely.
+
+```sh
+pip install pyinstaller                # 6.x
+python tools/build_ui.py               # builds web/ and stages it into the package
+pyinstaller packaging/binviz.spec      # -> dist/binviz/
+```
+
+Expect ~100 MB, dominated by numpy and lief. It is a onedir bundle, not a
+single self-extracting file: launch `dist/binviz/binviz.exe` (or
+double-click it) for the desktop window, or give it any subcommand —
+`dist/binviz/binviz.exe triage sample.exe` — because the frozen build is
+the whole CLI, not just the window.
+
+The staging step is not optional. `web/dist` lives outside the Python
+package, so skipping it produces an app whose window opens on a JSON 404;
+the spec refuses to build rather than let that happen quietly.
+
+`--root` still defaults to the working directory, so a double-clicked
+executable is confined to the folder it starts in — which is usually the
+app's own folder. Set the shortcut's "Start in", or launch it with
+`--root DIR`.
+
 ### Signing in
 
 By default there is no login screen and nothing to copy: the server mints a
