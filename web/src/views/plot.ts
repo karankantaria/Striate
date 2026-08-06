@@ -10,7 +10,7 @@
    survivors. */
 
 import { getSignal, type BinaryModel, type Region, type SignalBand, type SignalInfo } from "../api.ts";
-import { LOCATE_RGB, SERIES, type Theme } from "../colormap.ts";
+import { LOCATE_RGB, SERIES } from "../colormap.ts";
 import { html, joinHtml, replace, type SafeHtml } from "../dom.ts";
 import { clearPaneError, paneError } from "../panestatus.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
@@ -35,7 +35,6 @@ export class PlotView {
   private id = "";
   private model: BinaryModel | null = null;
   private lanes: Lane[] = [];
-  private theme: Theme;
   follow = false;
   fitY = false;
   private fetchSeq = 0;
@@ -48,12 +47,11 @@ export class PlotView {
   private x1 = 0;
 
   constructor(
-    host: HTMLElement, store: SelectionStore, theme: Theme,
+    host: HTMLElement, store: SelectionStore,
     picksEl: HTMLElement | null,
   ) {
     this.host = host;
     this.store = store;
-    this.theme = theme;
     this.picksEl = picksEl;
     this.canvas = document.createElement("canvas");
     host.appendChild(this.canvas);
@@ -66,12 +64,6 @@ export class PlotView {
     });
     store.on("hover", () => this.draw());
     store.on("locate", () => this.draw());
-    store.on("theme", (t) => {
-      this.theme = t;
-      this.assignColors();
-      this.draw();
-      this.renderPicks();
-    });
 
     this.canvas.addEventListener("pointerdown", (e) => {
       this.canvas.setPointerCapture(e.pointerId);
@@ -114,7 +106,7 @@ export class PlotView {
   }
 
   private assignColors(): void {
-    const palette = SERIES[this.theme];
+    const palette = SERIES;
     this.lanes.forEach((lane, i) => {
       lane.color = palette[i % palette.length];
     });
@@ -325,7 +317,7 @@ export class PlotView {
     const loc = this.store.state.locate;
     if (!loc || loc.max === 0 || this.x1 <= this.x0) return;
     if (loc.end <= this.x0 || loc.start >= this.x1) return;
-    const rgb = LOCATE_RGB[this.theme];
+    const rgb = LOCATE_RGB;
     const n = loc.density.length;
     const span = loc.end - loc.start;
     const top = this.plotTop(), bot = h - AXIS_H;
@@ -354,16 +346,15 @@ export class PlotView {
     if (!this.model) return;
     const css = getComputedStyle(document.documentElement);
     const baseline = css.getPropertyValue("--baseline").trim();
-    const light = this.theme === "light";
     for (const r of this.model.regions) {
       if (r.file_off < 0 || r.file_size <= 0) continue;
       if (r.file_off + r.file_size <= this.x0 || r.file_off >= this.x1) continue;
       const xa = this.xOfOffset(Math.max(r.file_off, this.x0), w);
       const xb = this.xOfOffset(Math.min(r.file_off + r.file_size, this.x1), w);
-      ctx.fillStyle = regionColor(r, light);
+      ctx.fillStyle = regionColor(r);
       ctx.fillRect(xa, 2, Math.max(xb - xa - 1, 1), RIBBON_H - 4);
       if (xb - xa > 46) {
-        ctx.fillStyle = css.getPropertyValue("--ink").trim();
+        ctx.fillStyle = css.getPropertyValue("--cream").trim();
         ctx.font = "10px system-ui, sans-serif";
         ctx.fillText(r.name, xa + 3, RIBBON_H - 6, xb - xa - 6);
       }
@@ -409,13 +400,18 @@ export class PlotView {
   }
 }
 
-function regionColor(r: Region, light: boolean): string {
-  if (r.kind === "overlay") return light ? "#eb683480" : "#d9592680"; // attention
-  if (r.kind === "gap") return light ? "#89878140" : "#89878140";
-  if (r.kind === "header") return light ? "#c3c2b780" : "#38383580";
-  if (r.perms.includes("x")) return light ? "#2a78d680" : "#3987e580"; // exec
-  if (r.perms.includes("w")) return light ? "#1baf7a60" : "#199e7060"; // data
-  return light ? "#2a78d640" : "#3987e540";                            // ro
+/* Region ribbon fills, stepped against --panel like everything else.
+   Alpha carries a second signal on purpose: executable reads strongest,
+   writable next, read-only faintest, so the ribbon is legible as a shape
+   before any colour is resolved. Overlay is the accent because an overlay
+   is the finding an analyst is looking for. */
+function regionColor(r: Region): string {
+  if (r.kind === "overlay") return "#ec5b3880";     // attention: the accent
+  if (r.kind === "gap") return "#a8a49240";         // sage, barely there
+  if (r.kind === "header") return "#a8a49266";
+  if (r.perms.includes("x")) return "#2a97f780";    // exec
+  if (r.perms.includes("w")) return "#25ae5660";    // data
+  return "#2a97f740";                               // ro
 }
 
 function fmtSig(v: number): string {

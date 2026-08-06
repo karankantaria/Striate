@@ -65,9 +65,20 @@ export const GRAY: Lut = (() => {
   return lut;
 })();
 
-/* ------------------------------------------------------- byte classes */
+/* ------------------------------------------------------- byte classes
 
-export type Theme = "light" | "dark";
+   One palette, not two. RELEASE.md §3 fixes Striate as dark-only, so the
+   light theme and its second set of chart colours are gone; what is left
+   is stepped against the one surface it will ever be drawn on
+   (`--panel` #453B3B).
+
+   These were not chosen by eye. Every value below was generated at a
+   target OKLCH lightness and hue, then run through the dataviz validator
+   against that surface, which measures the lightness band, the chroma
+   floor, CVD separation (OKLab ΔE under simulated protanopia and
+   deuteranopia), the normal-vision floor, and WCAG contrast. Re-run it
+   before changing any of them — "it looks fine to me" is exactly the
+   judgement colour-vision deficiency defeats. */
 
 function hex(s: string): [number, number, number] {
   return [
@@ -83,14 +94,33 @@ export const BYTE_CLASS_NAMES = [
   "null", "printable", "whitespace", "control", "high", "0xff",
 ] as const;
 
-export const BYTE_CLASS_COLORS: Record<Theme, string[]> = {
-  light: ["#eceae4", "#2a78d6", "#1baf7a", "#eb6834", "#a848b8", "#26251f"],
-  dark: ["#26272b", "#3987e5", "#199e70", "#d95926", "#c559c5", "#f2f0e9"],
-};
+/* Slots 1–4 are the categorical set and are validated with `--pairs all`,
+   not the default adjacent-only: this is a raster, so any class can end up
+   touching any other and there is no such thing as a non-adjacent pair.
+   Worst pair is control↔whitespace at ΔE 9.3 under protanopia, above the
+   target of 8.
 
-export function byteClassLut(theme: Theme): Lut {
+   Slots 0 and 5 are deliberate extremes rather than categories: null
+   recedes toward the panel, 0xff is the brand cream. They fail the
+   lightness band and the chroma floor on purpose — that is the encoding.
+
+   The validator WARNs that whitespace and high sit under 3:1 against the
+   surface. Kept: a filled raster tiles the whole canvas, so these marks
+   are read against each *other*, not against a background you can see,
+   and mark-to-mark separation is what the CVD checks above measure. The
+   legend carries the names either way. */
+export const BYTE_CLASS_COLORS: string[] = [
+  "#3a3130",   // null       recedes into the panel
+  "#1e8fee",   // printable
+  "#017634",   // whitespace
+  "#d77800",   // control
+  "#a4429e",   // high
+  "#fcf2e5",   // 0xff       the brand cream: the top of the range
+];
+
+export function byteClassLut(): Lut {
   const lut = new Uint8Array(768);
-  const colors = BYTE_CLASS_COLORS[theme];
+  const colors = BYTE_CLASS_COLORS;
   for (let i = 0; i < 256; i++) {
     const [r, g, b] = hex(colors[Math.min(i, colors.length - 1)]);
     lut[i * 3] = r; lut[i * 3 + 1] = g; lut[i * 3 + 2] = b;
@@ -100,20 +130,30 @@ export function byteClassLut(theme: Theme): Lut {
 
 /* --------------------------------------------------------- series ink */
 
-// Plot-view series colors: the validated categorical order (fixed order,
-// never cycled; assigned per signal name so a toggled-off series never
-// repaints the survivors).
-export const SERIES: Record<Theme, string[]> = {
-  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#a848b8", "#008300"],
-  dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#c559c5", "#008300"],
-};
+/* Plot-view series ink: fixed order, never cycled, assigned per signal
+   name so toggling one off never repaints the survivors.
+
+   Lightness alternates deliberately across the slots. An equal-lightness
+   set validated worse, not better: under deuteranopia the hue difference
+   is most of what collapses, and lightness is what is left to tell two
+   series apart. Worst adjacent pair here is ΔE 9.1 under deuteranopia.
+
+   Three slots WARN under 3:1 against the surface. That is relieved rather
+   than ignored: every lane is titled on the plot and every series has a
+   named checkbox in the legend, so identity never rests on colour alone. */
+export const SERIES: string[] = [
+  "#2a97f7",   // blue
+  "#a26c00",   // amber
+  "#25ae56",   // green
+  "#a644a0",   // magenta
+  "#00a6ac",   // cyan
+  "#cf4946",   // red
+];
 
 // Brush-to-locate highlight ink as "r,g,b" for rgba() templating with a
-// density-driven alpha — the attention orange, so it cannot be confused
-// with the blue selection band it draws alongside.
-export const LOCATE_RGB: Record<Theme, string> = {
-  light: "235,104,52", dark: "217,89,38",
-};
+// density-driven alpha. The brand accent, which nothing else in a raster
+// uses, so it cannot be confused with the selection band it draws over.
+export const LOCATE_RGB = "236,91,56";      // --accent #EC5B38
 
 /* ---------------------------------------------------------- rendering */
 

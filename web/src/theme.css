@@ -1,45 +1,61 @@
-/* binviz theming — CSS custom properties, light + dark.
-   Chart chrome/ink follow the validated reference palette; the byte-class
-   and series colors live in colormap.ts (they are painted into canvases). */
+/* Striate theming — the palette from RELEASE.md §3.
+
+   **Dark only, by decision, not by omission.** RELEASE.md fixes the
+   analyst-tool register; there is no light theme and no toggle, so nothing
+   here is duplicated and nothing can drift out of step. The byte-class and
+   series colours live in colormap.ts because they are painted into
+   canvases rather than applied as CSS — they were stepped against
+   `--panel` and validated for colour-vision deficiency, so re-run the
+   validator if you touch them.
+
+   Type is all-monospace, per RELEASE.md, from the system stack. No
+   external fonts, ever: the tool must work offline, and a font request is
+   a network request. */
 
 :root {
-  color-scheme: light;
-  --surface-1: #fcfcfb;      /* chart surface */
-  --page: #f9f9f7;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --baseline: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
-  --accent: #2a78d6;
-  --select-fill: rgba(42, 120, 214, 0.18);
-  --select-edge: #2a78d6;
-}
-
-:root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-1: #1a1a19;
-  --page: #0d0d0d;
-  --ink: #ffffff;
-  --ink-2: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --baseline: #383835;
-  --border: rgba(255, 255, 255, 0.1);
-  --accent: #3987e5;
-  --select-fill: rgba(57, 135, 229, 0.22);
-  --select-edge: #3987e5;
+
+  /* RELEASE.md §3, exactly */
+  --bg: #524646;             /* page */
+  --panel: #453b3b;          /* recessed cards / panes — the chart surface */
+  --field: #372f2f;          /* inputs, wells */
+  --cream: #fcf2e5;          /* primary text; the "offset 0" cap */
+  --sage: #a8a492;           /* labels, metadata; the "EOF" cap */
+  --accent: #ec5b38;         /* buttons, focus, every error signal */
+  --ink: #2b2424;            /* text on accent surfaces */
+  --hair: rgba(168, 164, 146, 0.22);
+
+  /* The names the rest of this sheet already used, mapped onto the above
+     rather than renamed across 400 lines. --surface-1 is --panel and so
+     on; keeping both spellings would be how two palettes start. */
+  --surface-1: var(--panel);
+  --page: var(--bg);
+  --ink-1: var(--cream);
+  --ink-2: var(--sage);
+  --muted: rgba(168, 164, 146, 0.72);
+  --grid: #4d4242;           /* one step off the panel: hover, chips */
+  --baseline: rgba(168, 164, 146, 0.34);
+  --border: var(--hair);
+  --select-fill: rgba(236, 91, 56, 0.20);
+  --select-edge: var(--accent);
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+  --ease: cubic-bezier(0.65, 0, 0.35, 1);
+  --settle: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * { box-sizing: border-box; }
+
+::selection { background: var(--accent); color: var(--ink); }
 
 html, body, #app { height: 100%; margin: 0; }
 
 body {
   background: var(--page);
-  color: var(--ink);
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--cream);
+  font: 13px/1.45 var(--mono);
+  -webkit-font-smoothing: antialiased;
 }
 
 #app { display: flex; flex-direction: column; }
@@ -60,7 +76,7 @@ body {
   border: 1px solid var(--baseline);
   border-radius: 6px;
   background: var(--page);
-  color: var(--ink);
+  color: var(--cream);
   font: inherit;
 }
 button {
@@ -68,7 +84,7 @@ button {
   border: 1px solid var(--baseline);
   border-radius: 6px;
   background: var(--surface-1);
-  color: var(--ink);
+  color: var(--cream);
   font: inherit;
   cursor: pointer;
 }
@@ -78,7 +94,7 @@ select {
   border: 1px solid var(--baseline);
   border-radius: 6px;
   background: var(--surface-1);
-  color: var(--ink);
+  color: var(--cream);
   font: inherit;
 }
 .chip {
@@ -88,7 +104,8 @@ select {
   background: var(--grid);
   color: var(--ink-2);
 }
-.chip.err { background: #d03b3b; color: #fff; }
+/* RELEASE.md §3: every error signal is --accent, with --ink on top */
+.chip.err { background: var(--accent); color: var(--ink); }
 .file-label { color: var(--ink-2); font-size: 12px; }
 
 /* --------------------------------------------------------- workspaces
@@ -117,7 +134,7 @@ select {
 }
 .wtab:hover { color: var(--ink-2); border-bottom-color: var(--baseline); }
 .wtab[aria-selected="true"] {
-  color: var(--ink); border-bottom-color: var(--accent);
+  color: var(--cream); border-bottom-color: var(--accent);
 }
 .wtab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
@@ -226,7 +243,7 @@ select {
   border: 1px solid var(--baseline);
   border-radius: 4px;
   background: var(--surface-1);
-  color: var(--ink);
+  color: var(--cream);
   font: inherit;
   font-size: 11px;
 }
@@ -316,6 +333,18 @@ select {
 
 #model-info { padding: 8px 10px; font-size: 12px; }
 
+/* Triage status colours. Reserved for state and never reused as a series
+   colour, and each one ships with its own words next to it — the verdict
+   is spelled out, findings carry a code and a description — so severity is
+   never carried by hue alone. Stepped against --panel like everything
+   else; critical is the accent, which RELEASE.md §3 assigns to every error
+   signal. */
+:root {
+  --status-critical: #ec5b38;   /* == --accent, by that rule */
+  --status-warning: #d9a441;
+  --status-good: #3fb27a;
+}
+
 /* triage panel (Phase 11) */
 #triage-info { padding: 8px 10px 0; font-size: 12px; }
 #triage-info:empty { display: none; }
@@ -330,9 +359,9 @@ select {
 .triage-verdict .v-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
 .triage-verdict .v-conf { color: var(--ink-2); font-size: 11px; margin-left: auto; }
 .triage-verdict.v-likely_packed,
-.triage-verdict.v-corrupt { background: color-mix(in srgb, #d03b3b 16%, transparent); }
-.triage-verdict.v-likely_benign_binary { background: color-mix(in srgb, #1baf7a 14%, transparent); }
-.triage-verdict.v-inconclusive { background: color-mix(in srgb, #eb6834 14%, transparent); }
+.triage-verdict.v-corrupt { background: color-mix(in srgb, var(--status-critical) 20%, transparent); }
+.triage-verdict.v-likely_benign_binary { background: color-mix(in srgb, var(--status-good) 18%, transparent); }
+.triage-verdict.v-inconclusive { background: color-mix(in srgb, var(--status-warning) 18%, transparent); }
 .finding-row {
   display: flex; gap: 6px; align-items: baseline;
   padding: 3px 4px; border-radius: 4px; margin-bottom: 2px;
@@ -344,8 +373,8 @@ select {
   flex: none; width: 8px; height: 8px; border-radius: 50%;
   position: relative; top: -1px;
 }
-.finding-row.sev-high .f-sev { background: #d03b3b; }
-.finding-row.sev-medium .f-sev { background: #eb6834; }
+.finding-row.sev-high .f-sev { background: var(--status-critical); }
+.finding-row.sev-medium .f-sev { background: var(--status-warning); }
 .finding-row.sev-low .f-sev { background: var(--baseline); }
 .finding-row .f-body { min-width: 0; }
 .finding-row .f-code {
@@ -359,7 +388,7 @@ select {
 #model-info table { border-collapse: collapse; width: 100%; }
 #model-info td { padding: 1px 6px 1px 0; vertical-align: top; }
 #model-info td:first-child { color: var(--muted); white-space: nowrap; }
-#model-info .warn { color: #d03b3b; }
+#model-info .warn { color: var(--accent); }
 #model-info h3 {
   margin: 10px 0 4px; font-size: 11px; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--muted);
@@ -397,10 +426,10 @@ select {
   color: var(--ink-2);
 }
 .hexrow { height: 18px; line-height: 18px; white-space: pre; }
-.hexrow .hl { background: var(--select-fill); color: var(--ink); }
+.hexrow .hl { background: var(--select-fill); color: var(--cream); }
 .hexrow .caret { outline: 1px solid var(--select-edge); }
 .hexrow .addr { color: var(--muted); }
-.hexrow .ascii { color: var(--ink); }
+.hexrow .ascii { color: var(--cream); }
 .hexrow .gr, .hexrow .gs {
   display: inline-block; overflow: hidden; vertical-align: bottom;
   color: var(--muted); font-size: 10px;
@@ -415,7 +444,7 @@ select {
 .offset-input {
   width: 76px; padding: 1px 4px;
   border: 1px solid var(--baseline); border-radius: 4px;
-  background: var(--surface-1); color: var(--ink);
+  background: var(--surface-1); color: var(--cream);
   font: 11px ui-monospace, Consolas, monospace;
 }
 
@@ -434,7 +463,7 @@ select {
   font-size: 12px;
   border-bottom: 1px solid var(--border);
   background: var(--select-fill);
-  color: var(--ink);
+  color: var(--cream);
 }
 .cfg-note { padding: 4px 10px; color: var(--muted); font-size: 11px; }
 .fn-row {
@@ -459,8 +488,8 @@ select {
    the provenance encoding the PLAN requires (§5.8) */
 .fn-badge.b-symbol, .fn-badge.b-entry { opacity: 0.65; }
 .fn-badge.b-prologue, .fn-badge.b-gap_sweep, .fn-badge.b-incomplete {
-  background: color-mix(in srgb, #eb6834 22%, transparent);
-  color: var(--ink);
+  background: color-mix(in srgb, var(--status-warning) 26%, transparent);
+  color: var(--cream);
 }
 #cfg-search { width: 110px; }
 
@@ -472,13 +501,13 @@ select {
   max-width: 620px; padding: 24px; text-align: center;
 }
 .empty-intro h2 {
-  margin: 0 0 8px; font-size: 22px; letter-spacing: 0.04em; color: var(--ink);
+  margin: 0 0 8px; font-size: 22px; letter-spacing: 0.04em; color: var(--cream);
 }
 .empty-intro p { margin: 0 0 10px; color: var(--ink-2); }
 .empty-intro p.muted { color: var(--muted); font-size: 12px; }
 .empty-intro button.primary {
   margin-top: 6px; padding: 6px 14px; font: inherit;
-  color: var(--surface-1); background: var(--accent);
+  color: var(--ink); background: var(--accent);
   border: 1px solid var(--accent); border-radius: 5px; cursor: pointer;
 }
 .empty-samples-label { margin-top: 22px !important; }
@@ -504,7 +533,7 @@ select {
   border: 1px solid var(--baseline);
   border-radius: 10px;
   background: var(--surface-1);
-  color: var(--ink);
+  color: var(--cream);
   font: inherit;
 }
 #help-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
@@ -524,7 +553,7 @@ select {
 #help-dialog kbd {
   padding: 1px 6px; min-width: 20px; text-align: center;
   border: 1px solid var(--baseline); border-radius: 4px;
-  background: var(--page); color: var(--ink);
+  background: var(--page); color: var(--cream);
   font: 11px ui-monospace, Consolas, monospace;
 }
 #help-dialog .kbd-sep { color: var(--muted); }
@@ -536,7 +565,7 @@ select {
 
 #tooltip {
   position: fixed; z-index: 10; pointer-events: none;
-  background: var(--surface-1); color: var(--ink);
+  background: var(--surface-1); color: var(--cream);
   border: 1px solid var(--baseline); border-radius: 6px;
   padding: 5px 8px; font-size: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
@@ -549,6 +578,208 @@ body.dragover::after {
   content: "drop to open";
   position: fixed; inset: 0; z-index: 20;
   display: flex; align-items: center; justify-content: center;
-  background: var(--select-fill); color: var(--ink);
+  background: var(--select-fill); color: var(--cream);
   font-size: 20px; border: 2px dashed var(--select-edge);
+}
+
+/* ====================================================== sign-in (§2.5)
+
+   Ported from web/design/login.html, which stays in the repo as the
+   design reference. Every animated rule is scoped to `.boot`, which
+   main.ts sets only when JS runs *and* prefers-reduced-motion is not
+   set — so without it the screen renders in its final state rather than
+   in a broken half-state. Do not lift these rules out of `.boot`. */
+
+.login-screen {
+  position: fixed; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--cream);
+  font-size: 14px; line-height: 1.5;
+}
+.login-screen[hidden] { display: none; }
+
+/* ---- boot splash: the mark draws itself the way Striate walks a file:
+   cream cap at offset 0, trace, sage cap at EOF. That semantic is
+   load-bearing per RELEASE.md §3 — do not recolour the caps. */
+
+.splash { display: none; }
+.login-screen.boot .splash {
+  position: fixed; inset: 0; z-index: 10;
+  display: grid; place-items: center;
+  background: var(--bg);
+}
+.splash-inner { text-align: center; }
+.splash-mark { display: block; width: 88px; height: 88px; margin: 0 auto 22px; }
+
+.login-screen.boot .trace {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: trace 1060ms var(--ease) 140ms forwards;
+}
+@keyframes trace { to { stroke-dashoffset: 0; } }
+
+/* offset 0 is known immediately; EOF only once the walk ends */
+.login-screen.boot .cap-start { opacity: 0; animation: pop 200ms ease-out 140ms forwards; }
+.login-screen.boot .cap-end { opacity: 0; animation: pop 260ms ease-out 1180ms forwards; }
+@keyframes pop { from { opacity: 0; } to { opacity: 1; } }
+
+.splash-word {
+  margin: 0;
+  font-size: 17px; font-weight: 600;
+  letter-spacing: 0.42em; text-indent: 0.42em;
+  text-transform: uppercase;
+  color: var(--cream);
+}
+.login-screen.boot .splash-word {
+  opacity: 0; animation: rise 520ms var(--settle) 820ms forwards;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* progress in the tool's own units rather than as a bar */
+.splash-offset {
+  margin: 12px 0 0;
+  font-size: 10.5px; letter-spacing: 0.22em;
+  color: var(--sage); opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.splash.is-done { animation: splash-out 340ms ease-in forwards; }
+@keyframes splash-out { to { opacity: 0; transform: scale(1.045); } }
+
+/* ---- card ------------------------------------------------------- */
+
+.login-card {
+  width: 100%; max-width: 380px;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55);
+}
+.login-screen.boot .login-card { opacity: 0; }
+.login-screen.boot .login-card.is-in {
+  animation: card-in 460ms var(--settle) forwards;
+}
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* the section-entropy strip: the same readout drawn over a loaded binary */
+.entropy {
+  display: block; width: 100%; height: 10px;
+  color: var(--sage);
+  border-bottom: 1px solid var(--hair);
+}
+.login-card.is-error .entropy { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .entropy { transition: color 180ms ease-out; }
+}
+.login-screen.boot .entropy { clip-path: inset(0 100% 0 0); }
+.login-screen.boot .login-card.is-in .entropy {
+  animation: wipe 620ms var(--settle) 240ms forwards;
+}
+@keyframes wipe { to { clip-path: inset(0 0 0 0); } }
+
+.login-body { padding: 30px 30px 26px; }
+
+.login-mast {
+  display: flex; align-items: center; gap: 13px; margin-bottom: 30px;
+}
+.login-mast svg { display: block; width: 40px; height: 40px; flex: none; }
+.login-wordmark {
+  margin: 0;
+  font-size: 19px; font-weight: 600;
+  letter-spacing: 0.32em; text-indent: 0.32em;
+  text-transform: uppercase;
+  color: var(--cream);
+}
+.login-tagline {
+  margin: 3px 0 0;
+  font-size: 10.5px; letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--sage);
+}
+
+/* ---- fields ----------------------------------------------------- */
+
+.login-field { margin-bottom: 18px; }
+.login-field label {
+  display: block; margin-bottom: 7px;
+  font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--sage);
+}
+.login-field input {
+  width: 100%; padding: 11px 13px;
+  font: inherit; font-size: 15px;
+  color: var(--cream);
+  background: var(--field);
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  outline: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .login-field input {
+    transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
+  }
+}
+.login-field input::placeholder { color: rgba(168, 164, 146, 0.45); }
+.login-field input:hover { border-color: rgba(168, 164, 146, 0.4); }
+.login-field input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(236, 91, 56, 0.24);
+}
+.login-field input[aria-invalid="true"] { border-color: var(--accent); }
+
+/* One line reserved whether or not there is a message, so the card never
+   jumps under the pointer as you fail a sign-in. */
+.login-error {
+  display: flex; gap: 8px;
+  min-height: 18px;
+  margin: -2px 0 16px;
+  font-size: 12px; line-height: 1.45;
+  color: var(--accent);
+}
+.login-error:empty { display: block; }
+.login-error::before { content: "!"; font-weight: 700; opacity: 0.85; }
+.login-error:empty::before { content: none; }
+
+#login-submit {
+  width: 100%; padding: 12px;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0.2em; text-indent: 0.2em; text-transform: uppercase;
+  color: var(--ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  cursor: pointer; outline: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #login-submit { transition: filter 140ms ease-out; }
+}
+#login-submit:hover:not(:disabled) { filter: brightness(1.1); }
+#login-submit:active:not(:disabled) { filter: brightness(0.92); }
+#login-submit:disabled { opacity: 0.55; cursor: default; }
+#login-submit:focus-visible {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--cream);
+}
+
+.login-note {
+  margin: 16px 0 0;
+  font-size: 11px; line-height: 1.5;
+  color: var(--accent);
+}
+.login-foot {
+  margin: 22px 0 0;
+  font-size: 10px; letter-spacing: 0.11em;
+  text-align: center; color: var(--sage); opacity: 0.66;
+}
+
+@media (max-width: 400px) {
+  .login-body { padding: 24px 20px 22px; }
 }

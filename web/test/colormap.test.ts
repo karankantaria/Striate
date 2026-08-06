@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  BYTE_CLASS_COLORS, byteClassLut, GRAY, INFERNO, MAGMA, VIRIDIS,
+  BYTE_CLASS_COLORS, BYTE_CLASS_NAMES, byteClassLut, GRAY, INFERNO,
+  LOCATE_RGB, MAGMA, SERIES, VIRIDIS,
 } from "../src/colormap.ts";
 
 test("LUTs are 256 RGB entries", () => {
-  for (const lut of [VIRIDIS, MAGMA, INFERNO, GRAY,
-                     byteClassLut("light"), byteClassLut("dark")]) {
+  for (const lut of [VIRIDIS, MAGMA, INFERNO, GRAY, byteClassLut()]) {
     assert.equal(lut.length, 768);
   }
 });
@@ -30,16 +30,22 @@ test("viridis endpoints are dark-purple and yellow", () => {
 });
 
 test("byte-class LUT maps ids to the validated palette, saturating past 5", () => {
-  for (const theme of ["light", "dark"] as const) {
-    const lut = byteClassLut(theme);
-    const colors = BYTE_CLASS_COLORS[theme];
-    for (let id = 0; id < 6; id++) {
-      const want = colors[id];
-      const got = "#" + [lut[id * 3], lut[id * 3 + 1], lut[id * 3 + 2]]
-        .map((v) => v.toString(16).padStart(2, "0")).join("");
-      assert.equal(got, want, `${theme} class ${id}`);
-    }
-    // out-of-range values (never sent by the server) clamp to the last class
-    assert.equal(lut[255 * 3], lut[5 * 3]);
+  const lut = byteClassLut();
+  for (let id = 0; id < 6; id++) {
+    const want = BYTE_CLASS_COLORS[id];
+    const got = "#" + [lut[id * 3], lut[id * 3 + 1], lut[id * 3 + 2]]
+      .map((v) => v.toString(16).padStart(2, "0")).join("");
+    assert.equal(got, want, `class ${id}`);
   }
+  // out-of-range values (never sent by the server) clamp to the last class
+  assert.equal(lut[255 * 3], lut[5 * 3]);
+});
+
+/* RELEASE.md §3 fixes Striate as dark-only. A second palette creeping back
+   is how the app ends up with colours nobody validated against --panel. */
+test("there is one palette, not one per theme", () => {
+  assert.ok(Array.isArray(BYTE_CLASS_COLORS), "BYTE_CLASS_COLORS is keyed by theme again");
+  assert.ok(Array.isArray(SERIES), "SERIES is keyed by theme again");
+  assert.equal(typeof LOCATE_RGB, "string");
+  assert.equal(BYTE_CLASS_COLORS.length, BYTE_CLASS_NAMES.length);
 });

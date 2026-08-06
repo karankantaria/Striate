@@ -16,7 +16,7 @@ import {
   getHist2, postLocate,
   type BinaryModel, type Hist2Meta, type QuantiseMeta,
 } from "../api.ts";
-import { applyLut, VIRIDIS, type Theme } from "../colormap.ts";
+import { applyLut, VIRIDIS } from "../colormap.ts";
 import { html, joinHtml, rawHtml, type SafeHtml } from "../dom.ts";
 import { clearPaneError, paneError } from "../panestatus.ts";
 import { fmtHex, type OffsetRange, type SelectionStore } from "../store.ts";
@@ -53,7 +53,7 @@ export class Hist2DView {
   private px = 0; private py = 0; private side = 0;
 
   constructor(
-    host: HTMLElement, store: SelectionStore, _theme: Theme,
+    host: HTMLElement, store: SelectionStore,
     statusEl: HTMLElement | null = null,
   ) {
     this.host = host;
@@ -68,7 +68,6 @@ export class Hist2DView {
 
     store.on("selection", () => this.debouncedRefetch());
     store.on("dtype", () => this.refetch());
-    store.on("theme", () => this.draw());
     store.on("locate", () => this.draw());   // cleared elsewhere -> drop brush ring
 
     this.canvas.addEventListener("pointerdown", (e) => {

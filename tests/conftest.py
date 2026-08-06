@@ -50,17 +50,25 @@ def make_app(cache_root=None, **kw):
     return create_app(cache_root, **kw)
 
 
-def authed_client(app, **kw):
+_NO_TOKEN = object()
+
+
+def authed_client(app, token=_NO_TOKEN, **kw):
     """TestClient that satisfies both the token check and the Host allowlist.
 
     `base_url` matters: TestClient's default Host is `testserver`, which
     TrustedHostMiddleware correctly rejects. Pointing it at 127.0.0.1 makes
     the tests speak to the app the way a real client does.
+
+    Pass `token=None` for a deliberately unauthenticated client — the
+    sign-in tests need one, because the whole question there is what an
+    unauthenticated caller can reach.
     """
     from fastapi.testclient import TestClient
 
     kw.setdefault("base_url", "http://127.0.0.1")
     client = TestClient(app, **kw)
-    if app.state.auth_token is not None:
-        client.headers["Authorization"] = f"Bearer {app.state.auth_token}"
+    supplied = app.state.auth_token if token is _NO_TOKEN else token
+    if supplied is not None:
+        client.headers["Authorization"] = f"Bearer {supplied}"
     return client

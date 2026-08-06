@@ -9,7 +9,7 @@
 
 import { getSurface, type BinaryModel } from "../api.ts";
 import { RasterCanvas } from "../canvas/raster.ts";
-import { VIRIDIS, type Theme } from "../colormap.ts";
+import { VIRIDIS } from "../colormap.ts";
 import { html } from "../dom.ts";
 import { clearPaneError, paneError } from "../panestatus.ts";
 import {
@@ -66,7 +66,7 @@ export class DotPlotView {
   private refineTimer: number | undefined;
 
   constructor(host: HTMLElement, controls: DotPlotControls,
-              store: SelectionStore, _theme: Theme) {
+              store: SelectionStore) {
     this.c = controls;
     this.store = store;
     this.view = new RasterCanvas(host, {

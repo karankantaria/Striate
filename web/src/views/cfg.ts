@@ -17,7 +17,6 @@ import {
   type BinaryModel, type CfgBlock, type CfgDoc, type FunctionIndexEntry,
   type FunctionsDoc,
 } from "../api.ts";
-import type { Theme } from "../colormap.ts";
 import { el, html, rawHtml, replace, span } from "../dom.ts";
 import { focusTabStop, optionList } from "../listnav.ts";
 import {
@@ -47,15 +46,9 @@ const HEADER_FONT = `10px ui-monospace, Consolas, monospace`;
 /* Edge ink per kind — true/false branches use the validated categorical
    aqua/orange (they must never be confusable), unconditional flow is
    neutral, unresolved-indirect is the fuchsia reserved for uncertainty. */
-const EDGE_INK: Record<Theme, Record<string, string>> = {
-  light: {
-    true: "#1baf7a", false: "#eb6834", uncond: "#898781",
-    fallthrough: "#898781", indirect_unresolved: "#a848b8",
-  },
-  dark: {
-    true: "#199e70", false: "#d95926", uncond: "#898781",
-    fallthrough: "#898781", indirect_unresolved: "#c559c5",
-  },
+const EDGE_INK: Record<string, string> = {
+  true: "#25ae56", false: "#cf4946", uncond: "#a8a492",
+  fallthrough: "#a8a492", indirect_unresolved: "#a644a0",
 };
 
 const BADGE_TITLES: Record<string, string> = {
@@ -77,7 +70,6 @@ export class CfgView {
   private searchEl: HTMLInputElement;
   private filterSelEl: HTMLInputElement;
   private store: SelectionStore;
-  private theme: Theme;
 
   private id = "";
   private model: BinaryModel | null = null;
@@ -110,7 +102,6 @@ export class CfgView {
       search: HTMLElement; filterSel: HTMLElement;
     },
     store: SelectionStore,
-    theme: Theme,
   ) {
     this.host = host;
     this.listEl = controls.list;
@@ -119,7 +110,6 @@ export class CfgView {
     this.searchEl = controls.search as HTMLInputElement;
     this.filterSelEl = controls.filterSel as HTMLInputElement;
     this.store = store;
-    this.theme = theme;
 
     this.canvas = document.createElement("canvas");
     host.appendChild(this.canvas);
@@ -138,7 +128,6 @@ export class CfgView {
       if (this.fitPending) this.fit(); else this.requestDraw();
     }).observe(host);
 
-    store.on("theme", (t) => { this.theme = t; this.renderList(); this.requestDraw(); });
     store.on("selection", () => {
       if (this.filterSelEl.checked) this.renderList();
       this.requestDraw();
@@ -482,7 +471,7 @@ export class CfgView {
     const border = this.css("--baseline");
     const accent = this.css("--accent");
     const selFill = this.css("--select-fill");
-    const edgeInk = EDGE_INK[this.theme];
+    const edgeInk = EDGE_INK;
 
     // ---- edges under blocks
     const kindOf = new Map(cur.prepared.edges.map((e) => [e.id, e.kind]));

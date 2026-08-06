@@ -24,6 +24,14 @@
       form-action 'self'
     " />
     <title>binviz</title>
+    <link rel="icon" href="/favicon.ico" />
+    <!-- The server rewrites this per request: how the page should
+         authenticate, and in `none` mode the session token itself. A meta
+         rather than an inline <script> because the CSP is `script-src
+         'self'` with no unsafe-inline (S2) and that is not worth trading
+         away for one string. Empty here so a source checkout served by
+         Vite falls back to the dev proxy. See src/auth.ts. -->
+    <meta name="binviz-boot" content="" />
     <link rel="stylesheet" href="/src/theme.css" />
   </head>
   <body>
@@ -56,8 +64,6 @@
         <span id="file-label" class="file-label"></span>
         <button id="help-btn" title="keyboard shortcuts ( ? )"
                 aria-label="Keyboard shortcuts">?</button>
-        <button id="theme-btn" title="toggle light/dark"
-                aria-label="Toggle light and dark theme">◐</button>
       </header>
 
       <!-- Filled in by workspace.ts from the WORKSPACES table, so the tabs
@@ -229,6 +235,9 @@
       <!-- Filled in by main.ts: the blurb is static, the sample list is
            whatever the served root actually contains. -->
       <div id="empty-state"></div>
+      <!-- Sign-in (§2.5). Empty and hidden unless --auth local is on, in
+           which case main.ts fills it and holds the app until it resolves. -->
+      <div id="login-screen" hidden></div>
       <div id="tooltip" hidden></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

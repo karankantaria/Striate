@@ -40,7 +40,6 @@ type Events = {
   selection: OffsetRange | null;
   hover: number | null;
   caret: number | null;
-  theme: "light" | "dark";
   dtype: ElementDtype;
   locate: LocateHighlight | null;
 };
@@ -53,7 +52,7 @@ export class SelectionStore {
     dtype: "u8", locate: null,
   };
   private handlers: { [K in keyof Events]: Handler<K>[] } = {
-    selection: [], hover: [], caret: [], theme: [], dtype: [], locate: [],
+    selection: [], hover: [], caret: [], dtype: [], locate: [],
   };
   private model: BinaryModel | null = null;
 
@@ -98,10 +97,6 @@ export class SelectionStore {
   setCaret(off: number | null): void {
     this.state.caret = off;
     this.emit("caret", off);
-  }
-
-  setTheme(theme: "light" | "dark"): void {
-    this.emit("theme", theme);
   }
 
   setDtype(dtype: ElementDtype): void {

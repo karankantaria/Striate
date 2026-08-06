@@ -116,6 +116,13 @@ def main(argv: list[str] | None = None) -> int:
                          help="disable API authentication (CI and tests "
                               "only); any local process or web page can then "
                               "read files through this server")
+    p_serve.add_argument("--auth", choices=("none", "local"), default="none",
+                         help="how the browser gets the token: 'none' (the "
+                              "default) injects it into the page, so there is "
+                              "no login screen; 'local' shows one and "
+                              "exchanges a credential for it. Neither "
+                              "changes whether the API is checked - it "
+                              "always is unless you pass --no-auth.")
     p_serve.add_argument("--max-upload", type=int, metavar="BYTES",
                          help="reject uploads larger than this (default 8 GiB)")
     p_serve.add_argument("--max-analyses", type=int, metavar="N",
@@ -124,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--max-cache", type=int, metavar="BYTES",
                          help="evict least-recently-used cached analyses past "
                               "this total (default 5 GiB)")
+
+    p_passwd = sub.add_parser(
+        "passwd", help="set this install's sign-in credential (--auth local)")
+    p_passwd.add_argument("--cache", help="cache root (default ~/.cache/binviz "
+                          "or $BINVIZ_CACHE)")
+    p_passwd.add_argument("--user", help="username (prompted if omitted)")
 
     p_hist = sub.add_parser("hist", help="n-gram histogram of a file")
     p_hist.add_argument("file")
@@ -180,8 +193,53 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_triage(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "passwd":
+        return _cmd_passwd(args)
 
     return 1
+
+
+def _cmd_passwd(args) -> int:
+    """Set the credential `--auth local` checks against.
+
+    Prompted, never an argument: a password on the command line lands in
+    the shell history and in the process list, where anyone on the machine
+    can read it — which is precisely the person this mode defends against.
+    """
+    import getpass
+
+    from .auth import AuthError, auth_path, has_credential, set_credential
+    from .cache import default_root
+
+    root = args.cache or default_root()
+    replacing = has_credential(root)
+    if replacing:
+        print("binviz: replacing the existing credential for this install")
+
+    user = args.user or input("Username: ")
+    try:
+        first = getpass.getpass("New password: ")
+        again = getpass.getpass("Confirm:      ")
+    except (EOFError, KeyboardInterrupt):
+        print("\nbinviz: cancelled", file=sys.stderr)
+        return 1
+    if first != again:
+        print("binviz: passwords do not match", file=sys.stderr)
+        return 1
+
+    try:
+        path = set_credential(root, user, first)
+    except AuthError as e:
+        print(f"binviz: {e}", file=sys.stderr)
+        return 1
+    except OSError as e:
+        print(f"binviz: could not write {auth_path(root)}: {e}",
+              file=sys.stderr)
+        return 1
+
+    print(f"binviz: credential written to {path} (mode 0600)")
+    print("binviz: start the server with `binviz serve --auth local`")
+    return 0
 
 
 def _cmd_serve(args) -> int:
@@ -193,6 +251,7 @@ def _cmd_serve(args) -> int:
 
     file_root = os.path.realpath(args.root or os.getcwd())
     app = create_app(args.cache, auth=not args.no_auth, token=args.token,
+                     auth_mode=args.auth,
                      file_root=file_root, max_upload=args.max_upload,
                      max_analyses=args.max_analyses,
                      max_cache=args.max_cache)
@@ -222,7 +281,11 @@ def _print_serve_banner(args, app, file_root: str) -> None:
     here and nowhere else: it must not reach the uvicorn access log, which
     is why the frontend trades the `?token=` URL for a header immediately.
     """
+    from .auth import has_credential
+    from .cache import default_root
+
     token = app.state.auth_token
+    url = f"http://{args.host}:{args.port}/"
     lines = [f"binviz: serving {file_root}", ""]
     if token is None:
         lines += [
@@ -230,7 +293,26 @@ def _print_serve_banner(args, app, file_root: str) -> None:
             "  !!  Any process or web page on this machine can now read",
             "  !!  files through this server. Use this for CI only.",
             "",
-            f"  http://{args.host}:{args.port}/",
+            f"  {url}",
+        ]
+    elif app.state.auth_mode == "local":
+        lines += ["  Sign-in required (--auth local):", f"  {url}"]
+        if not has_credential(args.cache or default_root()):
+            # Loud, because the window it names is the one thing this mode
+            # is supposed to close: until a credential exists, whoever
+            # reaches the port first claims the install.
+            lines += [
+                "",
+                "  !!  NO CREDENTIAL IS SET for this install.",
+                "  !!  The first sign-in will claim it - anyone who reaches",
+                "  !!  this port before you do becomes the account.",
+                "  !!  Stop and run `binviz passwd` if that is not what",
+                "  !!  you want.",
+            ]
+        lines += [
+            "",
+            "  Scripts do not sign in; send the token as a header:",
+            f"    Authorization: Bearer {token}",
         ]
     else:
         lines += [
@@ -238,7 +320,7 @@ def _print_serve_banner(args, app, file_root: str) -> None:
             # sets errors="replace", so an em-dash here would print as a
             # replacement glyph in the one message that must be readable.
             "  Open this URL - it carries the session token:",
-            f"  http://{args.host}:{args.port}/?token={token}",
+            f"  {url}?token={token}",
             "",
             "  For scripts, send the token as a header instead:",
             f"    Authorization: Bearer {token}",

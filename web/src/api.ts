@@ -81,9 +81,12 @@ async function ok(r: Response): Promise<Response> {
       const doc = await r.json();
       if (doc && typeof doc.detail === "string") detail = doc.detail;
     } catch { /* body wasn't JSON */ }
-    if (r.status === 401) {
-      // Worth spelling out: the natural guess is "the file is bad", and
-      // the actual fix is somewhere else entirely.
+    // A 401 from /api/login means "wrong password", and the server already
+    // said so in words written for the person reading them. Everywhere
+    // else a 401 means the token is missing or stale, where the natural
+    // guess is "the file is bad" and the actual fix is somewhere else.
+    if (r.status === 401 && !new URL(r.url, location.origin).pathname
+        .endsWith("/api/login")) {
       detail = "not authorised — reopen the URL that `binviz serve` " +
         "printed, or set BINVIZ_TOKEN before `npm run dev`";
     }
@@ -356,6 +359,25 @@ export interface ServerConfig {
   root: string | null;
   max_upload: number;
   tool_version: string;
+  /** "none" | "local" | "off" — how the browser gets its token (§2.2). */
+  auth_mode: string;
+}
+
+/** Exchange a local credential for the session token (§2.2 `local` mode).
+
+    The one unauthenticated route, by necessity — its job is handing out
+    the token. `created` is true when this call *set* the credential rather
+    than checking it, which happens on an install where none exists yet. */
+export async function login(
+  username: string, password: string,
+): Promise<{ token: string; created: boolean }> {
+  const r = await ok(await fetch("/api/login", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }));
+  return r.json();
 }
 
 /** What this server allows. `root` is not guessable client-side — "."

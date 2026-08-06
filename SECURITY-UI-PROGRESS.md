@@ -37,13 +37,14 @@ are not mine to do (see "Blocked" below). Security items first.
 | **§3.4** | **Navigation (ten panes render at once)** | ✅ **done** |
 | **§3.6** | **Accessibility baseline** | ✅ **done** |
 | **§3.7** | **404-after-open race** | ✅ **done** |
-| §2.x | Optional login mode | ⬜ not started |
+| **§2.2/§2.3/§2.5** | **Optional login mode + login screen** | ✅ **done** |
+| **RELEASE §3** | **Striate palette, dark-only, all-monospace** | ✅ **done** |
 | §4.2–4.5 | Pins, LICENSE, Trusted Publishing | ⬜ not started (SECURITY.md ✅, that was §4.4) |
 
-Test baseline after §3.7: **388 backend** (was 316), **86 frontend**
-(was 37), `npm run build` clean. **All of §1 (S1–S7), all of §3, and §4.1
-are closed** — every security finding and every UI item in the work order.
-What remains is §2.x (the optional login) and §4.2–4.5 (release metadata).
+Test baseline after §2.x: **405 backend** (was 316), **87 frontend**
+(was 37), `npm run build` clean. **All of §1 (S1–S7), all of §2, all of §3,
+and §4.1 are closed**, plus RELEASE.md §3's branding. What remains is
+§4.2/§4.3/§4.5 — dependency pins, the LICENSE file, Trusted Publishing.
 
 > **Building a wheel now has a required first step:**
 > ```sh
@@ -53,10 +54,17 @@ What remains is §2.x (the optional login) and §4.2–4.5 (release metadata).
 > Skip it and the wheel silently ships no UI again — which is exactly the
 > bug §4.1 was about. `src/binviz/webui/` is generated and gitignored.
 
-> **Running the app changed.** The API now needs a token and confines file
-> access to `--root`. `HANDOVER.md` "How to run" has the two-process recipe;
-> the short version is `export BINVIZ_TOKEN=…` and pass `--token "$BINVIZ_TOKEN"`
-> to `binviz serve`, because the Vite proxy reads the same variable.
+> **Running the app changed twice.** The API needs a token and confines
+> file access to `--root` (S1). And since §2.2, the *packaged* build no
+> longer needs `?token=` at all — the server injects it into the page, so
+> `binviz serve` then opening `http://127.0.0.1:8000/` just works.
+>
+> The Vite dev server is the exception, because it serves its own
+> `index.html` and knows nothing about any of this: there, still
+> `export BINVIZ_TOKEN=…` and pass `--token "$BINVIZ_TOKEN"` to
+> `binviz serve` so the proxy can attach it. `HANDOVER.md` has the recipe.
+>
+> For a shared machine: `binviz passwd`, then `binviz serve --auth local`.
 
 ## §0 is already resolved — the work order is stale there
 
@@ -764,6 +772,169 @@ race is real rather than short-circuited by a warm entry): opening a 3.6 MiB
 `hello_O0` produced **6 status polls, all 200**, through to `ready`. Zero
 console output.
 
+### §2.2 / §2.3 / §2.5 — optional login mode ✅
+
+**Fixed 2026-08-06.** The thing to hold on to, because it is the whole
+point of §2.1: **the login screen is not the security boundary.** The
+boundary is the token check on every `/api` route (S1a). Signing in is a
+way to *obtain* that token, not a substitute for checking it — anything on
+the machine can skip the form and talk to the API directly. Two tests exist
+purely to keep that honest: with `local` mode on and nobody signed in,
+`/api/open`, `/api/config` and `/api/{id}/status` all still 401; and having
+signed in does not make later requests authenticated by itself.
+
+**Three modes, exactly as §2.2 lays them out.**
+
+| Mode | Flag | Behaviour |
+|---|---|---|
+| `none` | default | The server injects the token into the HTML it serves. No login screen, no `?token=` URL to copy. |
+| `local` | `--auth local` | Login screen; a credential is exchanged for the token. |
+| `off` | `--no-auth` | No token. CI only, and the banner says so. |
+
+`none` is what makes the desktop app one click while still authenticating
+every call. Injecting a token into a page looks alarming written down, so
+the reasoning is in the code: the page is same-origin with the API and CORS
+names an explicit origin list, so a hostile page in another tab can *issue*
+the request but cannot read the response — and any local process that could
+fetch it could equally read the cache directory. This is Jupyter's model.
+
+**The bootstrap is a `<meta>`, not an inline script.** The CSP is
+`script-src 'self'` with no `unsafe-inline` (S2), and weakening that to
+pass one string across would trade the XSS defence for a convenience. The
+server rewrites `<meta name="binviz-boot" content="">` per request with the
+mode, the version, and — in `none` mode only — the token. If the
+placeholder is missing it raises 500 rather than serving a page that
+silently cannot authenticate: a stale staged bundle should look broken, not
+mysterious. (It did exactly that once during this work, which is how I know
+the check earns its place.)
+
+**Credentials (§2.3).** `hashlib.scrypt`, standard library, no new
+dependency: n=2^15, r=8, ~80 ms a guess. A per-install random salt, so one
+rainbow table cannot cover every install of the tool. Written to
+`<cache>/auth.json` created at mode 0600 — created, not chmodded
+afterwards, because between the two there is a window where the digest is
+world-readable. Tests assert the password does not appear in the file and
+that two installs of the *same* password produce different digests.
+
+Wrong username and wrong password return byte-identical responses, tested,
+because differing messages turn the form into a username oracle. Failures
+back off exponentially after three attempts (429 with `Retry-After`) — not
+a defence against a determined attacker, which is scrypt's job, but enough
+that the form is not a free fast oracle.
+
+**Setting the credential**, per the decision taken: `binviz passwd` prompts
+with `getpass` and writes it (never an argument — a password on the command
+line lands in the shell history and the process list, which is exactly the
+person this mode defends against). If none exists when `--auth local`
+starts, the first sign-in claims the install, and the startup banner says
+so in four lines of `!!` because that window is the one thing this mode is
+supposed to close. There is no default credential anywhere.
+
+> **A real bug found by measuring rather than reading.** The handler is
+> `async def`, and `hashlib.scrypt` is CPU-bound, so the KDF was running on
+> the event loop — 80 ms during which the server answers nothing at all,
+> including a running analysis's status polling. Now offloaded with
+> `run_in_threadpool`, with a test that fails if it goes back. The KDF being
+> slow must cost the attacker, not the rest of the server.
+
+**The screen (§2.5)** is ported from `web/design/login.html`, which stays in
+the repo as the reference. Everything RELEASE.md §4 asks to preserve is
+preserved: the boot sequence where the Hilbert mark draws itself the way
+Striate walks a file (cream cap at offset 0, stroke traces, sage cap lands
+at EOF, wordmark rises, splash wipes to the card), with the offset readout
+ticking on the same easing curve as the stroke so the number and the trace
+land together; the section-entropy strip capping the card, which shifts to
+`--accent` on a failed sign-in; real labels, real tab order, Enter submits,
+errors in `--accent` on a reserved line so the card never jumps.
+
+Two things kept deliberately:
+
+1. **`.boot` is set only when JS runs *and* `prefers-reduced-motion` is not
+   set.** Every animated rule is scoped to it, so without it the screen
+   renders in its final state rather than a broken half-state. Any click or
+   keypress also cuts the splash short — this is a screen you see every day
+   on a shared machine, and an animation you cannot skip becomes a tax.
+2. **The credential is not left in the DOM.** On success the screen is
+   emptied, not just hidden.
+
+The strip's bar heights are a fixed pseudo-profile and say so in a comment:
+this screen has no binary open, and inventing data that *looked* measured
+would be the tool lying decoratively.
+
+**Verified in a real browser**, both modes, against the packaged build:
+
+- `none`: opened `http://127.0.0.1:8020/` with **no `?token=` at all** and
+  the empty state listed six corpus samples — i.e. `/api/config` and
+  `/api/files` both authenticated off the injected token.
+- `local`, unclaimed install: the card came up in "Set password" mode with
+  the claiming note; a 5-character password surfaced the server's own
+  "Password must be at least 8 characters." verbatim; a valid one set the
+  credential, stored the token, emptied the screen and loaded the app.
+- `local`, returning: reloaded with `sessionStorage` cleared → "Sign in"
+  mode, claiming note gone; a wrong password showed the neutral message,
+  turned the entropy strip and the field border accent, and left the app
+  gated; typing again cleared the error; the right one signed in.
+- Both banners checked, with and without a credential set.
+
+Zero console output throughout.
+
+### RELEASE.md §3 — the Striate palette ✅
+
+**Done 2026-08-06**, on the decision to follow RELEASE.md rather than hedge:
+**dark only**. The light theme, the `◐` toggle, the `binviz-theme`
+localStorage key, the `store.setTheme` event and every `Record<Theme, …>`
+colour table are gone. One palette cannot drift out of step with itself.
+
+Tokens are RELEASE.md §3 verbatim (`--bg` `--panel` `--field` `--cream`
+`--sage` `--accent` `--ink` `--hair`), with the sheet's existing names
+mapped onto them rather than renamed across 400 lines. Type is the
+all-monospace system stack — no external fonts, ever, because the tool must
+work offline and a font request is a network request.
+
+> **One collision worth knowing about.** RELEASE.md defines `--ink` as
+> *text on accent surfaces* (#2B2424). The stylesheet already used
+> `var(--ink)` to mean *primary text*. Sixteen uses were remapped to
+> `--cream`, and `--ink` now means what the document says. If you see
+> dark-on-dark text somewhere I missed, that is the cause.
+
+**The chart colours were computed, not chosen.** The byte-class and series
+palettes are painted into canvases, so they are not CSS tokens and they had
+to be re-stepped against the new surface (`--panel` #453B3B, considerably
+lighter than the old #1a1a19). Every value was generated at a target OKLCH
+lightness and hue and then run through the dataviz validator, which measures
+the lightness band, the chroma floor, OKLab ΔE under simulated protanopia
+and deuteranopia, the normal-vision floor, and WCAG contrast.
+
+Three findings from that, all of which contradict what eyeballing suggests:
+
+1. **Equal lightness made CVD *worse*.** My first series palette was six
+   hues at one lightness; it failed at ΔE 2.8 because under deuteranopia
+   the hue difference is most of what collapses and lightness is what is
+   left. Alternating lightness across the slots took it to 9.1.
+2. **The byte-class raster needs `--pairs all`, not adjacent-only.** Any
+   class can end up touching any other in a raster, so there is no such
+   thing as a non-adjacent pair there. Worst all-pairs is 9.3 under
+   protanopia, above the target of 8.
+3. **Red-on-green is the classic protan collision and it bit.** Control
+   bytes moved from red-orange to amber, which took that pair from ΔE 1.2
+   to 9.3.
+
+Contrast WARNs remain on three series slots and two byte classes, kept
+deliberately and for different reasons: the plot titles every lane and
+names every series in the legend, so identity never rests on colour there;
+and a filled raster tiles the whole canvas, so those marks are read against
+each *other* rather than against a background you can see — which is what
+the CVD checks measure, and they pass.
+
+Re-run `scripts/validate_palette.js` before changing any of them. "It looks
+fine to me" is exactly the judgement colour-vision deficiency defeats.
+
+Status colours (`--status-critical` / `-warning` / `-good`) are reserved for
+state and never reused as a series colour, and each ships with its own
+words — the verdict is spelled out, findings carry a code and a description
+— so severity is never carried by hue alone. Critical is the accent, which
+RELEASE.md assigns to every error signal.
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -791,15 +962,19 @@ view, give it a `grid-area`, add it to a workspace's `panes`, add its slot
 to that workspace's `grid-template-areas`. The tests will tell you if you
 forgot one of those.
 
-**All of §1, §3 and §4.1 are now closed** — every security finding and the
-whole UI section. Two groups remain:
+**All of §1, §2, §3 and §4.1 are now closed**, plus RELEASE.md §3's
+branding. One group remains:
 
-- **§2.2/§2.5** optional login mode. §4.1 unblocked the `none` mode: with
-  same-origin serving the server can inject the token into the served HTML,
-  making the desktop app one-click while staying authenticated on the wire.
-  `GET /api/config` is the natural place to hang capability flags off.
 - **§4.2/§4.3/§4.5** loosen the `==` dependency pins, add the MIT LICENSE
   text (`pyproject.toml` declares MIT but no file exists), Trusted Publishing.
+
+**§2.4 is now the only thing between here and the desktop app.** Its
+preconditions are all satisfied — S2 is fixed, the CSP is in place, and the
+UI is served same-origin — so what is left of that section is the bridge
+itself: keep the `js_api` surface minimal (nothing that takes a path or
+spawns a subprocess), and make sure `debug=True` is off in release builds.
+`main.ts` already *detects* `window.pywebview.api.pick_file` for the native
+file dialog (§3.1); it does not create it.
 
 Things learned by testing that are easy to trip over again:
 

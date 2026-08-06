@@ -16,20 +16,24 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import tempfile
 import threading
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
+from html import escape as html_escape
 from pathlib import Path
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from . import auth as auth_mod
 from . import cache as cache_mod
 from .cache import ARTIFACTS, TOOL_VERSION, TRIGRAM_DTYPE, BinaryCache, is_ready
 from .loader import MappedFile, sha256_file
@@ -315,10 +319,56 @@ def _dotplot_key(req) -> str:
     return hashlib.blake2b(repr(ident).encode(), digest_size=12).hexdigest()
 
 
+#: The page carries its own bootstrap: how to authenticate, and in `none`
+#: mode the token itself. `index.html` ships a `<meta name="binviz-boot"
+#: content="">` placeholder and the server fills it in per request.
+_BOOT_META = re.compile(r'(<meta\s+name="binviz-boot"\s+content=")([^"]*)(")')
+
+
+def _boot_html(index: Path, app: FastAPI) -> str:
+    """Serve index.html with the auth bootstrap filled in.
+
+    In `none` mode this puts the session token into the HTML, which looks
+    alarming written down, so: the page is same-origin with the API, and
+    CORS names an explicit origin list, so a hostile page in another tab
+    can issue the request but cannot *read* the response. Any local process
+    that could fetch this could equally read the cache directory. This is
+    Jupyter's model and it is what makes the desktop app one click while
+    still authenticating every API call (§2.2).
+
+    A `<meta>` rather than an inline `<script>`: the CSP is `script-src
+    'self'` with no `unsafe-inline` (S2), and weakening that to pass a
+    string would trade the XSS defence for a convenience.
+    """
+    boot = {"auth_mode": app.state.auth_mode,
+            "tool_version": TOOL_VERSION}
+    if app.state.auth_mode == "none" and app.state.auth_token:
+        boot["token"] = app.state.auth_token
+    if app.state.auth_mode == "local":
+        # Whether this sign-in will *set* the credential or check it. Told
+        # here rather than through a second unauthenticated endpoint: the
+        # page already carries its own bootstrap, and one exemption in the
+        # token middleware is easier to keep correct than two. It leaks
+        # nothing that trying to sign in would not reveal anyway.
+        boot["claiming"] = not auth_mod.has_credential(
+            app.state.cache_root or cache_mod.default_root())
+    payload = html_escape(json.dumps(boot, separators=(",", ":")), quote=True)
+    text = index.read_text(encoding="utf-8")
+    patched, n = _BOOT_META.subn(rf"\g<1>{payload}\g<3>", text, count=1)
+    if n == 0:
+        # The placeholder is gone: fail loudly rather than serving a page
+        # that silently cannot authenticate and looks like a broken server.
+        raise HTTPException(
+            500, "the UI bundle has no binviz-boot placeholder; rebuild it "
+                 "with tools/build_ui.py")
+    return patched
+
+
 # ------------------------------------------------------------------- app
 
 def create_app(cache_root: str | os.PathLike | None = None, *,
                auth: bool = True, token: str | None = None,
+               auth_mode: str = "none",
                file_root: str | os.PathLike | None = None,
                allowed_origins: list[str] | None = None,
                allowed_hosts: list[str] | None = None,
@@ -330,6 +380,12 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
     `auth=False` disables the token entirely. It exists for CI and for the
     test suite's own negative cases; it is never a reasonable way to run
     the server, and the CLI makes you type `--no-auth` and prints a banner.
+
+    `auth_mode` picks how the browser *gets* the token — "none" (injected
+    into the served HTML, invisible to the user) or "local" (a login screen
+    exchanges a credential for it). It has no bearing on whether the API is
+    checked: that is `auth`, and it always is unless you turn it off. A
+    login screen that only gates the UI would be cosmetic (§2.1).
 
     `file_root` confines `/api/open` and `/api/files` to one subtree. It
     defaults to None (unconfined) because this function is also the library
@@ -355,6 +411,12 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
         if auth else None
     app.state.file_root = (os.path.realpath(file_root)
                            if file_root is not None else None)
+    # "none" (token injected into the served HTML, no login screen),
+    # "local" (login screen exchanges a credential for the token), or "off"
+    # when --no-auth removed the token entirely. See auth.py.
+    app.state.auth_mode = ("off" if not auth
+                           else "local" if auth_mode == "local" else "none")
+    app.state.login_throttle = auth_mod.Throttle()
 
     # Middleware order is load-bearing: the last one added is the outermost.
     # We want TrustedHost outermost (reject a rebound Host before any work
@@ -366,6 +428,14 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
     async def require_token(request: Request, call_next):
         expected = app.state.auth_token
         if expected is not None and request.url.path.startswith("/api"):
+            # The one exemption, and it has to exist: `local` mode's whole
+            # job is handing out the token, so the route that does it
+            # cannot require the token. It is rate-limited instead
+            # (auth.Throttle) and it is the *only* exemption — kept as an
+            # exact match rather than a prefix so `/api/login-something`
+            # cannot inherit it.
+            if request.url.path == "/api/login":
+                return await call_next(request)
             if not _token_ok(_extract_token(request), expected):
                 return JSONResponse(
                     {"detail": "missing or invalid token; pass it as "
@@ -551,6 +621,71 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
         state = app.state.jobs.ensure(sha, path, root(), stored=False)
         return {"id": sha, "state": state}
 
+    # ----------------------------------------------------------- login
+
+    @app.post("/api/login")
+    async def login(request: Request):
+        """Exchange a local credential for the session token (§2.2 `local`).
+
+        Unauthenticated by necessity — see the exemption in the middleware.
+        Everything that makes that safe lives here: it only ever hands back
+        the token the server already minted, it is throttled, and it says
+        nothing about *which* half of a wrong credential was wrong.
+        """
+        if app.state.auth_mode != "local":
+            raise HTTPException(
+                404, "this server does not use local sign-in; the token is "
+                     "supplied by the page it serves")
+
+        throttle = app.state.login_throttle
+        wait = throttle.retry_after()
+        if wait > 0:
+            # 429 rather than 401: the credential was not even looked at,
+            # and telling the client to come back is more useful than
+            # telling it the password was wrong when nobody checked.
+            raise HTTPException(
+                429, f"too many attempts; try again in {wait:.0f}s",
+                headers={"Retry-After": str(int(wait) + 1)})
+
+        try:
+            doc = await request.json()
+        except json.JSONDecodeError:
+            raise HTTPException(400, "send JSON {\"username\", \"password\"}")
+        if not isinstance(doc, dict):
+            raise HTTPException(400, "send JSON {\"username\", \"password\"}")
+        username = str(doc.get("username") or "")
+        password = str(doc.get("password") or "")
+
+        root_dir = root()
+        if not auth_mod.has_credential(root_dir):
+            # First run claims the install (§2.3: first run must *set* a
+            # password, never compare against a shipped default). `binviz
+            # passwd` is the way to do this ahead of time, and the CLI warns
+            # loudly while it is unset — but a desktop user who only ever
+            # double-clicks an icon must not be locked out of their own tool.
+            try:
+                await run_in_threadpool(
+                    auth_mod.set_credential, root_dir, username, password)
+            except auth_mod.AuthError as e:
+                raise HTTPException(400, str(e))
+            throttle.record_success()
+            return {"token": app.state.auth_token, "created": True}
+
+        # Off the event loop: scrypt is memory-hard *on purpose* and costs
+        # ~80 ms here, which is the whole point offline — but this handler
+        # is `async`, so running it inline would stall every other request,
+        # including a running analysis's status polling. The KDF being slow
+        # must cost the attacker, not the rest of the server.
+        if not await run_in_threadpool(
+                auth_mod.verify, root_dir, username, password):
+            throttle.record_failure()
+            # Deliberately one message for both halves: "no such user"
+            # would turn this into a username oracle.
+            raise HTTPException(401, "Username or password is incorrect.")
+
+        throttle.record_success()
+        return {"token": app.state.auth_token, "created": False}
+
     @app.get("/api/config")
     def config():
         """What this server will let the UI do.
@@ -564,6 +699,7 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
             "root": app.state.file_root,          # null when unconfined
             "max_upload": app.state.max_upload,
             "tool_version": TOOL_VERSION,
+            "auth_mode": app.state.auth_mode,
         }
 
     @app.get("/api/files")
@@ -928,12 +1064,14 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
                 # confine: `..` in the URL path must not escape the bundle
                 if _within(str(candidate), str(ui)) and candidate.is_file():
                     target = candidate
-            # everything else falls back to index.html so client-side
-            # routing (/login, RELEASE.md §2) works on a hard refresh
-            return FileResponse(target, headers={
-                "Content-Security-Policy": UI_CSP,
-                "X-Content-Type-Options": "nosniff",
-            })
+            headers = {"Content-Security-Policy": UI_CSP,
+                       "X-Content-Type-Options": "nosniff"}
+            if target.name == "index.html":
+                # everything unmatched falls back to index.html so client-side
+                # routing (/login, /bytes, …) works on a hard refresh — and
+                # that page is where the browser is told how to authenticate
+                return HTMLResponse(_boot_html(target, app), headers=headers)
+            return FileResponse(target, headers=headers)
 
     return app
 

@@ -13,7 +13,7 @@ import { getSurface, type BinaryModel, type ScalarRaster } from "../api.ts";
 import { RasterCanvas, type CellPointerEvent } from "../canvas/raster.ts";
 import {
   BYTE_CLASS_COLORS, BYTE_CLASS_NAMES, byteClassLut, GRAY, LOCATE_RGB,
-  VIRIDIS, type Lut, type Theme,
+  VIRIDIS, type Lut,
 } from "../colormap.ts";
 import { html, joinHtml, replace, span, type SafeHtml } from "../dom.ts";
 import { d2xy, offsetAtXY } from "../hilbert.ts";
@@ -44,7 +44,6 @@ export class OverallView {
   private binding: "file" | "selection";
   layout: OverallLayout = "linear";
   mode: OverallMode = "byteclass";
-  private theme: Theme;
   // fetched raster extent
   private start = 0;
   private end = 0;
@@ -57,11 +56,10 @@ export class OverallView {
   private legendEl: HTMLElement | null;
 
   constructor(
-    host: HTMLElement, store: SelectionStore, theme: Theme,
+    host: HTMLElement, store: SelectionStore,
     binding: "file" | "selection", legendEl: HTMLElement | null = null,
   ) {
     this.store = store;
-    this.theme = theme;
     this.binding = binding;
     this.legendEl = legendEl;
     this.view = new RasterCanvas(host, {
@@ -76,7 +74,6 @@ export class OverallView {
     });
     store.on("hover", () => this.view.redrawOverlay());
     store.on("locate", () => this.view.redrawOverlay());
-    store.on("theme", (t) => { this.theme = t; this.applyLutForMode(); this.renderLegend(); });
   }
 
   setBinary(id: string, model: BinaryModel): void {
@@ -156,7 +153,7 @@ export class OverallView {
   }
 
   private applyLutForMode(): void {
-    const lut: Lut = this.mode === "byteclass" ? byteClassLut(this.theme)
+    const lut: Lut = this.mode === "byteclass" ? byteClassLut()
       : this.mode === "signal" ? VIRIDIS
       : GRAY;
     this.view.setLut(lut);
@@ -360,7 +357,7 @@ export class OverallView {
     const loc = this.store.state.locate;
     if (!loc || !this.nCells || loc.max === 0) return;
     if (loc.end <= this.start || loc.start >= this.end) return;
-    const rgb = LOCATE_RGB[this.theme];
+    const rgb = LOCATE_RGB;
     const n = loc.density.length;
     const span = loc.end - loc.start;
     let i = 0;
@@ -392,7 +389,7 @@ export class OverallView {
     if (this.mode === "byteclass") {
       // Swatch colours are set through the CSSOM rather than a style="…"
       // attribute so the page can keep a strict `style-src 'self'` CSP.
-      const colors = BYTE_CLASS_COLORS[this.theme];
+      const colors = BYTE_CLASS_COLORS;
       this.legendEl.replaceChildren(...BYTE_CLASS_NAMES.map((name, i) => {
         const key = document.createElement("span");
         key.className = "key";

@@ -8,7 +8,7 @@ import {
   openPath, openUpload,
   type BinaryModel, type FileEntry, type Status,
 } from "./api.ts";
-import type { Theme } from "./colormap.ts";
+import { loginContext, needsLogin } from "./auth.ts";
 import { append, el, replace } from "./dom.ts";
 import { initHelp, isHelpOpen } from "./help.ts";
 import { Router } from "./router.ts";
@@ -25,6 +25,7 @@ import { Hist2DView } from "./views/hist2d.ts";
 import { Hist3DView } from "./views/hist3d.ts";
 import { ImageView } from "./views/image.ts";
 import { InfoPanel } from "./views/info.ts";
+import { showLogin } from "./views/login.ts";
 import { OverallView, type OverallLayout, type OverallMode } from "./views/overall.ts";
 import { PlotView } from "./views/plot.ts";
 import { TriagePanel } from "./views/triage.ts";
@@ -32,29 +33,18 @@ import { TriagePanel } from "./views/triage.ts";
 const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 
-/* ------------------------------------------------------------- theme */
-
-function initialTheme(): Theme {
-  const saved = localStorage.getItem("binviz-theme");
-  if (saved === "light" || saved === "dark") return saved;
-  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-let theme: Theme = initialTheme();
-document.documentElement.dataset.theme = theme;
-
 /* ------------------------------------------------------------- state */
 
 const store = new SelectionStore();
 const overall = new OverallView(
-  $("overall-canvas"), store, theme, "file", $("overall-legend"));
-const zoomed = new OverallView($("zoom-canvas"), store, theme, "selection");
-const plot = new PlotView($("plot-canvas"), store, theme, $("plot-signals"));
+  $("overall-canvas"), store, "file", $("overall-legend"));
+const zoomed = new OverallView($("zoom-canvas"), store, "selection");
+const plot = new PlotView($("plot-canvas"), store, $("plot-signals"));
 const hex = new HexView($("hex-scroll"), $("hex-addr"), store);
 const info = new InfoPanel($("model-info"), store);
 const hist2d = new Hist2DView(
-  $("hist2d-canvas"), store, theme, $("hist2d-status"));
-const hist3d = new Hist3DView($("hist3d-canvas"), store, theme);
+  $("hist2d-canvas"), store, $("hist2d-status"));
+const hist3d = new Hist3DView($("hist3d-canvas"), store);
 hist3d.onStats = (text) => { $("hist3d-status").textContent = text; };
 const image = new ImageView($("image-canvas"), {
   mode: $("img-mode"), width: $("img-width"), offset: $("img-offset"),
@@ -64,11 +54,11 @@ const image = new ImageView($("image-canvas"), {
 const dotplot = new DotPlotView($("dotplot-canvas"), {
   ax1: $("dot-ax1"), ax2: $("dot-ax2"), window: $("dot-window"),
   samples: $("dot-samples"), run: $("dot-run"), status: $("dot-status"),
-}, store, theme);
+}, store);
 const cfg = new CfgView($("cfg-canvas"), {
   list: $("cfg-list"), banner: $("cfg-banner"), status: $("cfg-status"),
   search: $("cfg-search"), filterSel: $("cfg-filter-sel"),
-}, store, theme);
+}, store);
 const triagePanel = new TriagePanel($("triage-info"), store);
 
 let currentId = "";
@@ -360,13 +350,6 @@ $("path-input").addEventListener("keydown", (e) => {
   }
 });
 
-$("theme-btn").addEventListener("click", () => {
-  theme = theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = theme;
-  localStorage.setItem("binviz-theme", theme);
-  store.setTheme(theme);
-});
-
 $("overall-layout").addEventListener("change", () => {
   const sel = $("overall-layout") as HTMLSelectElement;
   const modeSel = $("overall-mode") as HTMLSelectElement;
@@ -527,8 +510,6 @@ async function renderEmptyState(): Promise<void> {
   } catch { /* root unreadable: the blurb and the button are enough */ }
 }
 
-void renderEmptyState();
-
 /* --------------------------------------------------------- drag-drop */
 
 document.body.addEventListener("dragover", (e) => {
@@ -545,12 +526,36 @@ document.body.addEventListener("drop", async (e) => {
   if (file) openBinary("upload", await file.arrayBuffer(), file.name);
 });
 
-/* ------------------------------------------------------------- boot */
+/* ------------------------------------------------------------- boot
 
-restoreViewCfg();   // after all control listeners are wired
+   In `local` auth mode (§2.2) the sign-in screen comes first and nothing
+   that touches the API runs until it resolves. In every other mode this
+   is a straight line: the token was injected into the page, or supplied
+   by the dev proxy, or there is none because the server was started with
+   --no-auth.
 
-const urlPath = new URLSearchParams(location.search).get("path");
-if (urlPath) {
-  ($("path-input") as HTMLInputElement).value = urlPath;
-  openBinary("path", urlPath);
+   The views above are constructed either way — they only build canvases —
+   but they are given no binary and issue no request until here. */
+
+async function boot(): Promise<void> {
+  restoreViewCfg();   // after all control listeners are wired
+
+  if (needsLogin()) {
+    // Whether this sign-in sets the credential or checks it comes from the
+    // same bootstrap meta as the mode itself — no extra round trip, and no
+    // second unauthenticated endpoint to keep correct.
+    document.title = "Sign in — Striate";
+    await showLogin($("login-screen"), loginContext());
+    document.title = "binviz";
+  }
+
+  void renderEmptyState();
+
+  const urlPath = new URLSearchParams(location.search).get("path");
+  if (urlPath) {
+    ($("path-input") as HTMLInputElement).value = urlPath;
+    void openBinary("path", urlPath);
+  }
 }
+
+void boot();

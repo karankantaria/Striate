@@ -70,7 +70,7 @@ test("focused rows have a visible focus ring", () => {
 /* Icon-only controls: `title` is a tooltip a keyboard user never hovers and
    a screen reader is not obliged to read. */
 test("icon-only buttons carry a real accessible name", () => {
-  for (const id of ["nav-prev", "nav-next", "theme-btn", "help-btn",
+  for (const id of ["nav-prev", "nav-next", "help-btn",
                     "zoom-clear", "locate-clear"]) {
     const tag = INDEX.match(new RegExp(`<button id="${id}"[^>]*>`, "s"));
     assert.ok(tag, `${id} is gone`);

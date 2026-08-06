@@ -12,7 +12,6 @@
    reference. */
 
 import { getHist3, type BinaryModel, type Hist3Meta } from "../api.ts";
-import type { Theme } from "../colormap.ts";
 import { clearPaneError, paneError } from "../panestatus.ts";
 import type { OffsetRange, SelectionStore } from "../store.ts";
 
@@ -206,7 +205,7 @@ export class Hist3DView {
       times a second. */
   private offscreen = true;
 
-  constructor(host: HTMLElement, store: SelectionStore, _theme: Theme) {
+  constructor(host: HTMLElement, store: SelectionStore) {
     this.host = host;
     this.store = store;
     this.glCanvas = document.createElement("canvas");
@@ -251,7 +250,6 @@ export class Hist3DView {
 
     store.on("selection", () => this.debouncedRefetch());
     store.on("dtype", () => this.refetch());
-    store.on("theme", () => { this.dirty = true; });
 
     this.overlay.addEventListener("pointerdown", (e) => {
       this.overlay.setPointerCapture(e.pointerId);
