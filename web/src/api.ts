@@ -252,6 +252,67 @@ export async function postLocate(
   return { density: new Uint32Array(await r.arrayBuffer()), meta };
 }
 
+/* ------------------------------------------------------ CFG (Phase 10) */
+
+export interface FunctionIndexEntry {
+  va: number; name: string; size: number;
+  discovery: string;        // symbol|entry|call_target|ptr_target|prologue|gap_sweep
+  confidence: number;
+  mode: string;
+  complete: boolean;
+  blocks: number; edges: number; insns: number; unresolved: number;
+}
+
+export interface FunctionsDoc {
+  functions: FunctionIndexEntry[];
+  call_graph: { from: number; to: number }[];
+  unclaimed_blocks: {
+    va: number; end_va: number; file_off: number;
+    insns: number; confidence: string;
+  }[];
+  packed: boolean;
+  warnings: string[];
+  stats: Record<string, number>;
+}
+
+export interface CfgInsn {
+  va: number; size: number; bytes: string; mnemonic: string; op: string;
+}
+
+export interface CfgBlock {
+  id: number; va: number; end_va: number; file_off: number;
+  confidence: "high" | "low";
+  insns: CfgInsn[];
+  terminator: string;       // jcc|jmp|ret|call_noreturn|fallthrough|indirect|invalid|halt
+}
+
+export interface CfgEdge {
+  src: number; dst: number;
+  kind: "true" | "false" | "uncond" | "fallthrough" | "indirect_unresolved";
+}
+
+export interface CfgDoc {
+  function: {
+    va: number; name: string; size: number; discovery: string;
+    confidence: number; mode: string; complete: boolean;
+  };
+  blocks: CfgBlock[];
+  edges: CfgEdge[];
+  unresolved: { va: number; reason: string; hint: string | null }[];
+  calls_out: {
+    from_va: number; target_va: number | null;
+    name: string | null; kind: string;
+  }[];
+}
+
+export async function getFunctions(id: string): Promise<FunctionsDoc> {
+  return (await ok(await get(`/api/${id}/functions`))).json();
+}
+
+export async function getCfg(id: string, va: number): Promise<CfgDoc> {
+  return (await ok(await get(`/api/${id}/cfg/0x${va.toString(16)}`))).json();
+}
+
 export async function getBytes(
   id: string, off: number, len: number,
 ): Promise<{ data: Uint8Array; off: number }> {

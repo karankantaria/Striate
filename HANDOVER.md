@@ -4,7 +4,7 @@
 > the "how to run" section if it changed, and the gotchas list. `PLAN.md` is
 > the full design doc; this file is the fast on-ramp for a new session.
 
-## Status (updated 2026-08-05, end of Phase 9)
+## Status (updated 2026-08-06, end of Phase 10)
 
 | Phase | What | State |
 |---|---|---|
@@ -17,9 +17,9 @@
 | P6 | Content-addressed cache + FastAPI service (binary wire formats, X-Meta header) | ✅ done |
 | P7 | Web shell: Overall + Zoomed + Plot + SelectionStore + hex peek | ✅ done |
 | P8 | 2D/3D histogram views (bigram canvas, WebGL trigram, brush-to-locate) | ✅ done |
-| **P9** | **Image view (stride suggester, 87 modes), dot plot (progressive), virtualised hex viewer** | ✅ **done (this session)** |
-| P10 | CFG view (elkjs in a worker, Canvas2D) | ⬜ next |
-| P11 | Triage verdict + file navigation | ⬜ needs all views |
+| P9 | Image view (stride suggester, 87 modes), dot plot (progressive), virtualised hex viewer | ✅ done |
+| **P10** | **CFG view (elk layout in workers, Canvas2D, uncertainty encoding, function list)** | ✅ **done (this session)** |
+| P11 | Triage verdict + file navigation | ⬜ next |
 
 ## How to run
 
@@ -184,6 +184,55 @@ GRBG; repeats.bin dot plot showing the diagonal + 3 off-diagonal band pairs
 refining to 100%; drag-select in Overall scrolling/highlighting the hex view
 and re-anchoring the image view; no console errors.
 
+## What Phase 10 built
+
+No backend changes (`/functions` and `/cfg/{va}` were P5/P6 work). All
+frontend; `elkjs` is now a dependency.
+
+- `src/views/cfgutil.ts` — DOM-free helpers, node --test covered
+  (`test/cfgutil.test.ts`): monospace block sizing (one measured char
+  width, no per-string measurement; >30-line blocks elide the middle),
+  `prepareGraph` (CFG doc → ELK nodes/edges, plus a "?" sentinel node and
+  dashed `indirect_unresolved` edge for each block containing an
+  unresolved record), `HitGrid` (uniform-grid hit index — the PLAN's
+  quadtree role, simpler), and viewport maths (`fitTransform`, `zoomAt`
+  anchored zoom, scale clamps, `TEXT_MIN_SCALE = 0.4` LOD threshold).
+- `src/workers/layout.worker.ts` — my protocol worker ({seq, nodes,
+  edges} in, positions + orthogonal bendpoints out) wrapping **elk-api
+  with a workerFactory that spawns `elk-worker.min.js?worker` as a nested
+  worker** (see gotcha 13 — elk.bundled.js does NOT survive Vite). ELK
+  options: layered, DOWN, ORTHOGONAL routing, NETWORK_SIMPLEX layering,
+  BRANDES_KOEPF placement.
+- `src/views/cfg.ts` — the view. Function list (search filter +
+  "selection only" checkbox filtering by VA-overlap with the store
+  selection; discovery-tier badges, quiet for symbol/entry, orange for
+  prologue/gap_sweep/partial; unclaimed-block count in the footer),
+  packed banner (rendered instead of garbage functions when
+  `functions.packed`), Canvas2D graph render (block header = va +
+  terminator, mnemonic-column instruction text, dashed borders for
+  low-confidence blocks, entry block in accent, blocks overlapping the
+  selection tinted, edge ink true/false = aqua/orange, dashed fuchsia to
+  the "?" sentinel), pan/drag (3 px threshold vs click), wheel zoom at
+  cursor, hover tooltip (block va range/file off/region/terminator/
+  confidence; sentinel explains "hole in the graph"). Layout results
+  cached per function VA — reopening a function never re-lays-out; stale
+  worker replies dropped by seq.
+- Linkage: clicking a block `setSelection`s its file range + caret —
+  verified live: zoomed/hex/bigram/trigram/dotplot all follow; hovering
+  a block sets `hoveredOffset`. Selection made elsewhere filters the
+  function list ("selection only") and tints overlapping blocks.
+- Auto-opens `main`, else the entry function, else the first.
+- `index.html`/`theme.css`: fifth grid row `"cfg cfg cfg"`; `#cfg-body`
+  = list (240 px) + canvas; `.fn-badge`/`.cfg-banner`/`.cfg-note` styles.
+
+Verified live: hello_O0 main (18 blocks, layout 76–194 ms — criterion is
+<200 ms), block click driving every view, selection filtering 885→1
+functions, switchy `dispatch` fully resolved (24 blocks/43 edges — the P5
+jump-table matcher got all 20 targets, so no sentinel there), switchy PLT
+thunks showing the dashed "?" sentinel for `jmp [rip+…]`, hello_upx
+showing the packed banner with 7 explained stub functions, theme toggle
+clean, no console errors.
+
 ## Gotchas discovered this session (read before touching P9–P10)
 
 1. **Never let the browser HTTP-cache `/api`.** 404 and 410 are
@@ -236,17 +285,28 @@ and re-anchoring the image view; no console errors.
     `meta.lit_cells` against the raster size before diagnosing.
 12. `ImageBitmap`s must be `.close()`d when replaced (image view does);
     leaking them holds GPU memory across refetches.
+13. **`elkjs/lib/elk.bundled.js` breaks under Vite's CJS prebundling** —
+    its internal fake-Worker shim comes out as "_Worker is not a
+    constructor" the moment `new ELK()` runs (and a worker that dies this
+    way is *silent*: no console error, layout just never returns — attach
+    `worker.onerror` when debugging). The working recipe is
+    `import ELK from "elkjs/lib/elk-api.js"` plus
+    `import ElkEngineWorker from "elkjs/lib/elk-worker.min.js?worker"`
+    and `new ELK({ workerFactory: () => new ElkEngineWorker() })`.
+    Nested workers (ours spawns elk's) are fine in Chrome, dev and build.
+14. P9's image view intentionally does NOT follow the shared
+    `SelectionStore.dtype` — pixel formats (rgb8, bayer…) are a different
+    axis than element dtypes; the mode picker is its own control.
 
-## Where P10 plugs in
+## Where P11 plugs in
 
-Everything it imports exists: `SelectionStore` (clicking a CFG block should
-`setSelection` to the block's file range — overall, hex, and bigram already
-follow), `api.ts`, `colormap.ts`, the tooltip singleton, and the pane grid
-in `index.html`/`theme.css` (add a `cfg` grid area). Backend `/functions`
-and `/cfg/{va}` are tested and ready. elkjs is **not** yet a dependency —
-`npm install elkjs` and put layout in a Web Worker
-(`src/workers/layout.worker.ts` per the PLAN), cached by
-`(function_va, collapse_state)`. Note P9's image view intentionally does
-NOT follow the shared `SelectionStore.dtype` — pixel formats (rgb8, bayer…)
-are a different axis than element dtypes; the mode picker is its own
-control.
+Every view P11's findings need to drive exists and follows the
+SelectionStore (a finding's `offsets` → `setSelection` + `setCaret` is the
+whole navigation story; the CFG additionally filters its function list to
+the selection). Backend: `triage.py` + `GET /api/{id}/triage` per the PLAN
+§P11 wire format, consuming the calibration + region entropy from P2 and
+`functions.json` stats from P5 (`packed` is already surfaced end-to-end).
+File navigation: `GET /api/files?dir=` already exists; view configuration
+that should persist across files lives in each view's controls — check
+`store.setModel` resets (it clears selection/dtype) before assuming
+persistence works.

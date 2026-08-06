@@ -156,6 +156,23 @@
           </div>
           <div id="dotplot-canvas" class="canvas-host"></div>
         </section>
+
+        <section id="cfg-pane" class="pane">
+          <div class="pane-head">
+            <h2>CFG</h2>
+            <input id="cfg-search" type="text" spellcheck="false"
+                   placeholder="filter…" class="offset-input" />
+            <label class="toggle" title="show only functions overlapping the selection">
+              <input type="checkbox" id="cfg-filter-sel" />selection only</label>
+            <button id="cfg-fit" title="fit graph to view">fit</button>
+            <span id="cfg-status" class="range-label muted"></span>
+          </div>
+          <div id="cfg-banner" class="cfg-banner" hidden></div>
+          <div id="cfg-body">
+            <div id="cfg-list" class="scroll"></div>
+            <div id="cfg-canvas" class="canvas-host"></div>
+          </div>
+        </section>
       </main>
 
       <div id="empty-state">

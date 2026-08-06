@@ -103,12 +103,14 @@ select {
   grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr) minmax(240px, 0.9fr);
   grid-template-rows:
     minmax(240px, 1.1fr) minmax(200px, 0.9fr)
-    minmax(240px, 1.1fr) minmax(240px, 1.1fr);
+    minmax(240px, 1.1fr) minmax(240px, 1.1fr)
+    minmax(320px, 1.4fr);
   grid-template-areas:
     "overall zoom side"
     "overall plot hex"
     "hist2d hist3d hex"
-    "image dotplot hex";
+    "image dotplot hex"
+    "cfg cfg cfg";
 }
 #overall-pane { grid-area: overall; }
 #zoom-pane { grid-area: zoom; }
@@ -119,6 +121,7 @@ select {
 #hist3d-pane { grid-area: hist3d; }
 #image-pane { grid-area: image; }
 #dotplot-pane { grid-area: dotplot; }
+#cfg-pane { grid-area: cfg; }
 
 .pane-head input[type="number"] {
   width: 52px;
@@ -222,6 +225,51 @@ select {
   background: var(--surface-1); color: var(--ink);
   font: 11px ui-monospace, Consolas, monospace;
 }
+
+/* CFG view (Phase 10) */
+#cfg-body { flex: 1; display: flex; min-height: 0; }
+#cfg-list {
+  flex: 0 0 240px;
+  border-right: 1px solid var(--border);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 0;
+}
+#cfg-canvas { flex: 1; }
+.cfg-banner {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--select-fill);
+  color: var(--ink);
+}
+.cfg-note { padding: 4px 10px; color: var(--muted); font-size: 11px; }
+.fn-row {
+  display: flex; align-items: center; gap: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fn-row:hover { background: var(--grid); }
+.fn-row.active { background: var(--select-fill); }
+.fn-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis;
+  font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+}
+.fn-meta { color: var(--muted); font-size: 10px; }
+.fn-badge {
+  padding: 0 4px; border-radius: 6px; font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  background: var(--grid); color: var(--ink-2);
+}
+/* ground-truth tiers stay quiet; guesses are flagged — the badge ink is
+   the provenance encoding the PLAN requires (§5.8) */
+.fn-badge.b-symbol, .fn-badge.b-entry { opacity: 0.65; }
+.fn-badge.b-prologue, .fn-badge.b-gap_sweep, .fn-badge.b-incomplete {
+  background: color-mix(in srgb, #eb6834 22%, transparent);
+  color: var(--ink);
+}
+#cfg-search { width: 110px; }
 
 #empty-state {
   flex: 1; display: flex; align-items: center; justify-content: center;

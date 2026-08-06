@@ -3,12 +3,13 @@
    SelectionStore. */
 
 import {
-  getModel, getSignals, getStatus, openPath, openUpload,
+  getFunctions, getModel, getSignals, getStatus, openPath, openUpload,
   type BinaryModel, type Status,
 } from "./api.ts";
 import type { Theme } from "./colormap.ts";
 import { SelectionStore, fmtRange, type ElementDtype } from "./store.ts";
 import type { DisplayMode } from "./transforms.ts";
+import { CfgView } from "./views/cfg.ts";
 import { DotPlotView } from "./views/dotplot.ts";
 import { HexView } from "./views/hexview.ts";
 import { Hist2DView } from "./views/hist2d.ts";
@@ -54,11 +55,16 @@ const dotplot = new DotPlotView($("dotplot-canvas"), {
   ax1: $("dot-ax1"), ax2: $("dot-ax2"), window: $("dot-window"),
   samples: $("dot-samples"), run: $("dot-run"), status: $("dot-status"),
 }, store, theme);
+const cfg = new CfgView($("cfg-canvas"), {
+  list: $("cfg-list"), banner: $("cfg-banner"), status: $("cfg-status"),
+  search: $("cfg-search"), filterSel: $("cfg-filter-sel"),
+}, store, theme);
 
 let currentId = "";
 let pollTimer: number | undefined;
 let modelLoaded = false;
 let signalsLoaded = false;
+let functionsLoaded = false;
 
 /* ----------------------------------------------------------- opening */
 
@@ -69,7 +75,7 @@ async function openBinary(kind: "path" | "upload", arg: string | ArrayBuffer) {
       ? await openPath(arg as string)
       : await openUpload(arg as ArrayBuffer);
     currentId = id;
-    modelLoaded = signalsLoaded = false;
+    modelLoaded = signalsLoaded = functionsLoaded = false;
     store.setModel(null);   // resets dtype to u8 — keep the picker in sync
     ($("dtype-select") as HTMLSelectElement).value = "u8";
     poll();
@@ -105,6 +111,10 @@ async function poll(): Promise<void> {
     signalsLoaded = true;
     await onSignalsReady();
   }
+  if (modelLoaded && !functionsLoaded && arts.functions === "ready") {
+    functionsLoaded = true;
+    cfg.setFunctions(await getFunctions(currentId));
+  }
 
   if (st.state === "complete") {
     setStatus("ready");
@@ -134,6 +144,7 @@ async function onModelReady(st: Status): Promise<void> {
   hist3d.setBinary(currentId, model);
   image.setBinary(currentId, model);
   dotplot.setBinary(currentId, model);
+  cfg.setBinary(currentId, model);
 }
 
 async function onSignalsReady(): Promise<void> {
@@ -216,6 +227,8 @@ $("hist3d-overlap").addEventListener("change", () => {
 $("hist3d-spin").addEventListener("change", () => {
   hist3d.setSpin(($("hist3d-spin") as HTMLInputElement).checked);
 });
+
+$("cfg-fit").addEventListener("click", () => cfg.fit());
 
 store.on("selection", (sel) => {
   $("zoom-range").textContent = sel ? fmtRange(sel) : "no selection";
