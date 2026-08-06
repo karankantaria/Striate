@@ -351,6 +351,19 @@ export async function getTriage(id: string): Promise<TriageDoc> {
 
 /* ---------------------------------------- file navigation (Phase 11) */
 
+export interface ServerConfig {
+  /** Directory the server will read files from; null when unconfined. */
+  root: string | null;
+  max_upload: number;
+  tool_version: string;
+}
+
+/** What this server allows. `root` is not guessable client-side — "."
+    resolves against the server's cwd, which need not be --root. */
+export async function getConfig(): Promise<ServerConfig> {
+  return (await ok(await get("/api/config"))).json();
+}
+
 export interface FileEntry { name: string; path: string; size: number }
 
 export async function getFiles(

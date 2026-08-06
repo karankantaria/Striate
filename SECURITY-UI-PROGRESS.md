@@ -32,13 +32,18 @@ are not mine to do (see "Blocked" below). Security items first.
 | **S7** | **Unbounded analysis concurrency** | ✅ **done** |
 | **§3.3** | **Eight silent failure paths** | ✅ **done** |
 | **§3.5** | **One escaper + stop hand-building HTML** | ✅ **done** |
-| §3.x | Remaining UI work (picker, first-run, nav, a11y) | ⬜ not started |
+| **§3.1** | **File selector button** | ✅ **done** |
+| **§3.2** | **First-run state** | ✅ **done** |
+| §3.4 | Navigation (ten panes render at once) | ⬜ not started |
+| §3.6 | Accessibility baseline | ⬜ not started |
+| §3.7 | 404-after-open race | ⬜ not started |
 | §2.x | Optional login mode | ⬜ not started |
 | §4.2–4.5 | Pins, LICENSE, Trusted Publishing | ⬜ not started (SECURITY.md ✅, that was §4.4) |
 
-Test baseline after §3.5: **383 backend** (was 316), **62 frontend** (was 37),
-`npm run build` clean. **All of §1 (S1–S7), §4.1, §3.3 and §3.5 are closed** —
-i.e. every security finding and both structural UI items.
+Test baseline after §3.1/§3.2: **387 backend** (was 316), **62 frontend**
+(was 37), `npm run build` clean. **All of §1 (S1–S7), §4.1, §3.1, §3.2, §3.3
+and §3.5 are closed** — every security finding, both structural UI items, and
+the two first-run ones.
 
 > **Building a wheel now has a required first step:**
 > ```sh
@@ -469,6 +474,57 @@ A nice accident of the corpus: `hello_O2`'s first region is named
 both the node-built region list and the ``html``-tagged hex gutter, which is
 the escaping proving itself on real data rather than on a synthetic payload.
 
+### §3.1 + §3.2 — file picker and first-run state ✅
+
+**Fixed 2026-08-06.** The work order called the missing picker "the single
+worst friction point in the app"; until now the only way in was typing an
+absolute path.
+
+**§3.1.** A "Choose file…" button in the toolbar, behaving differently in the
+two runtimes exactly as the platform note requires:
+
+- **Browser:** `<input type="file">` never reveals an absolute path, so the
+  bytes go up through the existing upload endpoint. The consequence is real
+  and correct — an upload has no source path, so `[` / `]` directory
+  navigation stays disabled.
+- **Desktop:** a `window.pywebview.api.pick_file()` bridge returns a real
+  absolute path and uses the path endpoint, so navigation keeps working.
+
+Detection is `window.pywebview`, not a build flag, so one bundle serves both.
+**This only detects a bridge; it does not create one** — adding a `js_api`
+bridge is still gated on §2.4, since a bridge turns any surviving XSS into
+code execution.
+
+**§3.2.** The empty state now says what the tool is, offers the picker, and
+lists real files from the served root as one-click samples — so it works for
+a corpus checkout and a `pip install` alike instead of hardcoding paths that
+exist on one machine.
+
+> **New endpoint, and the bug that forced it.** The sample list first used
+> `GET /api/files?dir=.` — which **403s**, because "." resolves against the
+> *server process* cwd and that need not be `--root`. With
+> `--root corpus/out` the two differ and the list silently vanished. So
+> there is now `GET /api/config` returning `{root, max_upload, tool_version}`;
+> the UI asks where the root is rather than guessing. It also gives the
+> desktop dialog somewhere sensible to open, which §3.1 asks for. Behind the
+> token like everything else, since it names a filesystem path.
+
+Also fixed while testing: after picking a file in the browser, the label read
+**`file.bin`** — the cache's own internal name — rather than what the user
+chose. `source.path` for a stored upload is the cache copy, so the picked
+name is now carried separately and shown.
+
+**Verified in a real browser**, all three routes:
+
+- sample button → opens by path, nav shows `6/21`
+- browser upload (a real `File` handed to the input) → analyses to ready,
+  label shows `my-chosen-name.bin`, nav correctly **disabled**
+- desktop route (bridge stubbed, since there is no real one yet) → takes the
+  **path** route, nav shows `4/21` — i.e. the browser/desktop difference
+  genuinely works rather than just compiling
+- a path outside `--root` → `"path is outside the served root"`, flagged as
+  an error rather than failing silently
+
 ### §4.4 — `SECURITY.md` ✅
 
 Written as a real public-facing document, since the repo has a public remote
@@ -494,26 +550,32 @@ safe rendering from `dom.ts` for free.
 
 What is left of the work order, in its own order:
 
-- **§3.1 — file picker.** The highest-value remaining item; today the only
-  way in is pasting an absolute path. **Read the platform note carefully:**
-  browser and desktop must behave *differently* (`<input type="file">`
-  deliberately hides the real path, so the browser must route through the
-  upload endpoint, while pywebview's dialog returns real paths and should
-  use the path endpoint). Getting that wrong is the likely failure mode.
-- **§3.2** first-run state, **§3.4** navigation (ten panes render at once
-  today), **§3.6** accessibility — the last two as part of the new screens.
-- **§2.2/§2.5** optional login mode. `§4.1` unblocked the `none` mode: with
+- **§3.4 — navigation.** `theme.css` is a five-row grid rendering **ten
+  panes at once**, with no way to focus, collapse or tab. The work order is
+  right that adding a sixth and seventh row makes it materially worse, and
+  routing is needed for `/login` anyway — the SPA fallback from §4.1 already
+  supports it, so a hard refresh on a route will work.
+- **§3.6 — accessibility.** Still **zero** `aria-*` and `role=` attributes
+  outside the two I added (`panestatus.ts` and the new buttons). The primary
+  navigation flow — clicking a triage finding — is a mouse-only `<div>`.
+- **§3.7 — the 404-after-open race.** `POST /api/open` returns an id whose
+  `/status` 404s until the analysis thread writes `meta.json`; `main.ts:110`
+  special-cases it and every other client must too. Return the initial status
+  from `open`, or 202 while pending.
+- **§2.2/§2.5** optional login mode. §4.1 unblocked the `none` mode: with
   same-origin serving the server can inject the token into the served HTML,
   making the desktop app one-click while staying authenticated on the wire.
+  `GET /api/config` is the natural place to hang capability flags off.
 - **§4.2/§4.3/§4.5** loosen the `==` dependency pins, add the MIT LICENSE
   text (`pyproject.toml` declares MIT but no file exists), Trusted Publishing.
 
-Worth knowing before §3.1: the image view already clamps `width` to ≥1
-client-side, which is why a bad width never reaches the server. That is fine,
-but it means UI-level validation and the server-side 400s (S3) are
-independent — do not assume testing one covers the other. I found it by
-trying to trigger a pane error with `width=0` and getting a perfectly
-successful render.
+Two things learned by testing that are easy to trip over again:
+
+- The image view clamps `width` to ≥1 **client-side**, so a bad width never
+  reaches the server. UI validation and the server-side 400s (S3) are
+  therefore independent — testing one does not cover the other.
+- Anything that needs to know where the server can read from must ask
+  `GET /api/config`. Do not reach for `"."`.
 
 Now genuinely unblocked by §4.1: **§2.2's `none` auth mode** — with
 same-origin serving, the server can inject the token into the served HTML and

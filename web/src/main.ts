@@ -3,13 +3,14 @@
    SelectionStore. */
 
 import {
-  getFiles, getFunctions, getModel, getSignals, getStatus, getTriage,
+  getConfig, getFiles, getFunctions, getModel, getSignals, getStatus,
+  getTriage,
   openPath, openUpload,
   type BinaryModel, type FileEntry, type Status,
 } from "./api.ts";
 import type { Theme } from "./colormap.ts";
-import { el, replace } from "./dom.ts";
-import { SelectionStore, fmtRange, type ElementDtype } from "./store.ts";
+import { append, el, replace } from "./dom.ts";
+import { SelectionStore, fmtRange, fmtSize, type ElementDtype } from "./store.ts";
 import type { DisplayMode } from "./transforms.ts";
 import { CfgView } from "./views/cfg.ts";
 import { DotPlotView } from "./views/dotplot.ts";
@@ -66,6 +67,7 @@ const triagePanel = new TriagePanel($("triage-info"), store);
 
 let currentId = "";
 let currentPath: string | null = null;   // absolute source path, null for uploads
+let uploadName: string | null = null;    // name the user picked, uploads only
 let pollTimer: number | undefined;
 let modelLoaded = false;
 let signalsLoaded = false;
@@ -74,7 +76,8 @@ let triageLoaded = false;
 
 /* ----------------------------------------------------------- opening */
 
-async function openBinary(kind: "path" | "upload", arg: string | ArrayBuffer) {
+async function openBinary(kind: "path" | "upload", arg: string | ArrayBuffer,
+                          name?: string) {
   try {
     setStatus("opening…");
     const { id } = kind === "path"
@@ -82,6 +85,7 @@ async function openBinary(kind: "path" | "upload", arg: string | ArrayBuffer) {
       : await openUpload(arg as ArrayBuffer);
     currentId = id;
     currentPath = kind === "path" ? (arg as string) : null;
+    uploadName = kind === "upload" ? (name ?? null) : null;
     modelLoaded = signalsLoaded = functionsLoaded = triageLoaded = false;
     // selection resets; view configuration (dtype, layouts, modes)
     // survives the file switch — see store.setModel
@@ -163,7 +167,11 @@ async function onModelReady(st: Status): Promise<void> {
   }
   $("layout").hidden = false;
   $("empty-state").hidden = true;
-  const name = st.source?.path?.split(/[\\/]/).pop() ?? currentId.slice(0, 12);
+  // For an upload, source.path is the cache's own `file.bin`, which is not
+  // what the user picked — show the name they chose instead.
+  const name = uploadName
+    ?? st.source?.path?.split(/[\\/]/).pop()
+    ?? currentId.slice(0, 12);
   $("file-label").textContent = `${name} · ${model.format} · ${model.arch}`;
   document.title = `binviz — ${name}`;
   overall.setBinary(currentId, model);
@@ -378,6 +386,110 @@ store.on("selection", (sel) => {
   $("zoom-range").textContent = sel ? fmtRange(sel) : "no selection";
 });
 
+/* ------------------------------------------------------- file picker
+
+   The single worst first-run friction point was that the only way in was
+   typing an absolute path (§3.1). The button has to behave *differently* in
+   the two runtimes, and that difference is the whole subtlety:
+
+   - Browser: `<input type="file">` deliberately never reveals an absolute
+     path — you get a File and nothing else — so the bytes go up through the
+     existing upload endpoint. The consequence is real and correct: an
+     upload has no source path, so directory navigation ([ / ]) stays
+     disabled for it.
+   - Desktop: pywebview's native dialog returns a real absolute path, so it
+     uses the path endpoint. Strictly better — no copy, no upload, and file
+     navigation keeps working.
+
+   Feature detection is `window.pywebview`, not a build flag, so one bundle
+   serves both. Note this only *detects* a bridge; it does not create one.
+   Adding a `js_api` bridge is gated on §2.4's checklist, because a bridge
+   turns any surviving XSS into code execution. */
+
+interface PywebviewBridge {
+  api?: { pick_file?: () => Promise<string | string[] | null> };
+}
+
+function desktopBridge(): PywebviewBridge | undefined {
+  return (window as unknown as { pywebview?: PywebviewBridge }).pywebview;
+}
+
+async function chooseFile(): Promise<void> {
+  const bridge = desktopBridge();
+  if (bridge?.api?.pick_file) {
+    try {
+      const picked = await bridge.api.pick_file();
+      const path = Array.isArray(picked) ? picked[0] : picked;
+      if (!path) return;                       // dialog cancelled
+      ($("path-input") as HTMLInputElement).value = path;
+      void openBinary("path", path);
+    } catch (e) {
+      setStatus(String((e as Error).message ?? e), true);
+    }
+    return;
+  }
+  ($("file-input") as HTMLInputElement).click();
+}
+
+$("choose-btn").addEventListener("click", () => void chooseFile());
+$("file-input").addEventListener("change", async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";        // so re-picking the same file fires change again
+  if (!file) return;
+  ($("path-input") as HTMLInputElement).value = "";
+  await openBinary("upload", await file.arrayBuffer(), file.name);
+});
+
+/* ------------------------------------------------------ first run (§3.2)
+
+   The empty state used to say only "Open a binary to begin", which is a dead
+   end: nothing on screen said what the tool did, and the only documented way
+   in was a path you had to already know. The sample list is whatever the
+   served root actually contains, so it works for a corpus checkout and a
+   `pip install` alike rather than hardcoding paths that exist on one
+   machine. */
+
+const SAMPLES_SHOWN = 6;
+
+async function renderEmptyState(): Promise<void> {
+  const host = $("empty-state");
+  const intro = el("div", { class: "empty-intro" },
+    el("h2", {}, "binviz"),
+    el("p", {},
+       "Linked views over one binary — entropy, byte structure, images, "
+       + "self-similarity and control flow, all sharing a selection."),
+    el("p", { class: "muted" },
+       "Choose a file, drop one onto the window, or paste an absolute path."),
+    el("button", { id: "empty-choose", class: "primary" }, "Choose file…"));
+  replace(host, intro);
+  host.querySelector("#empty-choose")!
+      .addEventListener("click", () => void chooseFile());
+
+  // ask the server where its root is rather than assuming "." — that
+  // resolves against the server's cwd, which need not be --root, and the
+  // mismatch 403s (found exactly that way)
+  try {
+    const cfg = await getConfig();
+    const { dir, files } = await getFiles(cfg.root ?? ".");
+    const pick = files.filter((f) => f.size > 0).slice(0, SAMPLES_SHOWN);
+    if (!pick.length) return;
+    append(intro,
+      el("p", { class: "muted empty-samples-label" }, `or try one from ${dir}:`),
+      el("div", { class: "empty-samples" },
+         ...pick.map((f) => el("button", { class: "sample", title: f.path },
+           `${f.name} · ${fmtSize(f.size)}`))));
+    intro.querySelectorAll<HTMLElement>(".sample").forEach((b, i) => {
+      b.addEventListener("click", () => {
+        ($("path-input") as HTMLInputElement).value = pick[i].path;
+        void openBinary("path", pick[i].path);
+      });
+    });
+  } catch { /* root unreadable: the blurb and the button are enough */ }
+}
+
+void renderEmptyState();
+
 /* --------------------------------------------------------- drag-drop */
 
 document.body.addEventListener("dragover", (e) => {
@@ -391,7 +503,7 @@ document.body.addEventListener("drop", async (e) => {
   e.preventDefault();
   document.body.classList.remove("dragover");
   const file = e.dataTransfer?.files?.[0];
-  if (file) openBinary("upload", await file.arrayBuffer());
+  if (file) openBinary("upload", await file.arrayBuffer(), file.name);
 });
 
 /* ------------------------------------------------------------- boot */

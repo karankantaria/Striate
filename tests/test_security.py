@@ -873,3 +873,51 @@ def test_app_without_a_staged_ui_still_serves_the_api(tmp_path, monkeypatch):
     with authed_client(app) as c:
         assert c.get(f"/api/files?dir={tmp_path}").status_code == 200
         assert c.get("/").status_code == 404      # no UI, no catch-all
+
+
+# --------------------------------------------- §3.1: the config endpoint
+
+def test_config_reports_the_served_root(tmp_path):
+    """The UI cannot guess the root.
+
+    "." resolves against the *server process* cwd, which need not be
+    --root, so a frontend that listed "." would 403 whenever the two
+    differ — which is exactly what happened the first time the first-run
+    sample list was wired up.
+    """
+    root = tmp_path / "root"
+    root.mkdir()
+    app = make_app(tmp_path / "cache", file_root=str(root),
+                   max_upload=1234)
+    with authed_client(app) as c:
+        doc = c.get("/api/config").json()
+    assert doc["root"] == os.path.realpath(root)
+    assert doc["max_upload"] == 1234
+    assert doc["tool_version"]
+
+
+def test_config_reports_null_root_when_unconfined(tmp_path):
+    app = make_app(tmp_path / "cache", file_root=None)
+    with authed_client(app) as c:
+        assert c.get("/api/config").json()["root"] is None
+
+
+def test_config_requires_a_token(tmp_path):
+    """It names a filesystem path, so it is behind auth like everything else."""
+    from fastapi.testclient import TestClient
+
+    app = make_app(tmp_path / "cache")
+    with TestClient(app, base_url="http://127.0.0.1") as anon:
+        assert anon.get("/api/config").status_code == 401
+
+
+def test_config_root_is_directly_listable(tmp_path):
+    """The whole point: config.root -> /api/files must not 403."""
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "sample.bin").write_bytes(b"\x00" * 32)
+    app = make_app(tmp_path / "cache", file_root=str(root))
+    with authed_client(app) as c:
+        listed = c.get(f"/api/files?dir={c.get('/api/config').json()['root']}")
+        assert listed.status_code == 200
+        assert [f["name"] for f in listed.json()["files"]] == ["sample.bin"]

@@ -34,6 +34,11 @@
                placeholder="absolute path to a binary… (or drop a file anywhere)" />
         <datalist id="recent-files"></datalist>
         <button id="open-btn">Open</button>
+        <button id="choose-btn" title="pick a file (no path typing)">Choose file…</button>
+        <!-- The browser fallback. `<input type="file">` deliberately never
+             exposes an absolute path, so this route uploads the bytes; the
+             desktop build uses a native dialog and keeps the real path. -->
+        <input id="file-input" type="file" hidden />
         <button id="nav-prev" title="previous file in directory ( [ )" disabled>‹</button>
         <button id="nav-next" title="next file in directory ( ] )" disabled>›</button>
         <span id="nav-pos" class="range-label muted" hidden></span>
@@ -202,9 +207,9 @@
         </section>
       </main>
 
-      <div id="empty-state">
-        <p>Open a binary to begin — paste an absolute path above, or drop a file onto the window.</p>
-      </div>
+      <!-- Filled in by main.ts: the blurb is static, the sample list is
+           whatever the served root actually contains. -->
+      <div id="empty-state"></div>
       <div id="tooltip" hidden></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

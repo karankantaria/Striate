@@ -544,6 +544,21 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
         state = app.state.jobs.ensure(sha, path, root(), stored=False)
         return {"id": sha, "state": state}
 
+    @app.get("/api/config")
+    def config():
+        """What this server will let the UI do.
+
+        `root` exists because the frontend cannot guess it: "." resolves
+        against the *server process* cwd, which is not necessarily --root,
+        so a UI that listed "." would 403 whenever the two differ. It also
+        gives the desktop file dialog somewhere sensible to open.
+        """
+        return {
+            "root": app.state.file_root,          # null when unconfined
+            "max_upload": app.state.max_upload,
+            "tool_version": TOOL_VERSION,
+        }
+
     @app.get("/api/files")
     def list_files(dir: str):
         dir = confined(dir)
