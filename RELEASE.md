@@ -110,38 +110,64 @@ copy — so Back and deep links behave.
 ## 3. Branding
 
 Master mark: **an order-2 Hilbert curve traversing a 4×4 byte grid** — the
-same curve the Hilbert surface view walks. The caps are semantic: **cream
-cap = offset 0, sage cap = end of file.** Keep that semantic in any new use
+same curve the Hilbert surface view walks. The caps are semantic: **light
+cap = offset 0, deep cap = end of file.** Keep that semantic in any new use
 of the mark; the login boot animation depends on it.
 
 ### Palette
 
+The four brand values are a single-hue ramp — four dark plums, no light
+value — so **nothing in the ramp can carry text.** The brightest, `--rose`,
+reaches 3.27:1 on `--ink`, below the 4.5:1 body-text threshold. `--text` and
+`--muted` are two neutrals tinted off the same hue so they read as family;
+they are the only two values text is ever set in. There is no third, dimmer
+step: at 0.66 opacity `--muted` falls to 3.3:1, so hierarchy below `--muted`
+is carried by size and tracking, never by fading the ink.
+
 | Token | Hex | Role |
 |-------|-----|------|
-| `--bg` | `#524646` | page background |
-| `--panel` | `#453B3B` | recessed cards / panes; **the chart surface** |
-| `--field` | `#372F2F` | input fields, wells |
-| `--cream` | `#FCF2E5` | primary text; "offset 0" cap |
-| `--sage` | `#A8A492` | labels, metadata; "EOF" cap |
-| `--accent` | `#EC5B38` | buttons, focus, **every error signal**, the curve stroke |
-| `--ink` | `#2B2424` | text **on** accent surfaces — not primary text |
-| `--hair` | `rgba(168,164,146,0.22)` | hairline borders |
+| `--ink` | `#1A1A1D` | page background, **and** the recessed fields/wells on a card |
+| `--plum` | `#3B1C32` | cards / panes; **the chart surface**; the icon tile |
+| `--deep` | `#6A1E55` | low-entropy band, pressed button, "EOF" cap |
+| `--rose` | `#A64D79` | buttons, focus, high-entropy band, the curve stroke |
+| `--text` | `#F7EFF4` | primary text (15.4:1 on ink, 13.3:1 on plum); "offset 0" cap |
+| `--muted` | `#C98CA8` | labels, metadata (6.5:1 on ink, 5.6:1 on plum) |
+| `--alert` | `#FF7A8A` | **every error signal** (6.0:1 on plum) |
+| `--hair` | `rgba(166,77,121,0.30)` | hairline borders |
+
+**Errors are `--alert`, not `--rose`.** `--rose` is the primary action, and
+an error must not be the colour of the button that just failed. `--alert` is
+the one value outside the four; set it to `var(--rose)` to stay strictly
+inside the ramp — every error-related rule routes through that one token.
+
+Two consequences worth keeping: the button does **not** brighten on hover
+(lightening `--rose` pushes its label to 3.89:1), so hover is a soft outer
+glow and the press darkens to `--deep` (9.6:1); and the login entropy strip
+is genuinely two-tone — low bars `--deep`, high bars `--rose`, split at 0.60
+— rather than one ink at varying opacity.
 
 Type is **all-monospace** (system stack — no external fonts, ever; the app
 must work offline). Labels tracked out in caps; wordmark letter-spacing
 0.32–0.42em. **Dark theme only** — there is no light theme and no toggle, so
 nothing is duplicated and nothing can drift.
 
-Live in `web/src/theme.css`. Note `--ink` means text *on* accent; the
-stylesheet's primary-text colour is `--cream`.
+Live in `web/src/theme.css`. Note `--ink` is the *page*, not text on accent;
+text on `--rose` is `--text`, and text on `--alert` is `--ink`.
 
 ### Chart colours are computed, not chosen
 
 The byte-class and signal-series palettes are painted into canvases, so they
 are not CSS tokens — they live in `web/src/colormap.ts`. Every value was
-generated at a target OKLCH lightness/hue and validated against `--panel`
+generated at a target OKLCH lightness/hue and validated against `--plum`
 for lightness band, chroma floor, OKLab ΔE under simulated protanopia and
 deuteranopia, normal-vision separation, and WCAG contrast.
+
+The palette change moved that surface *darker*, which raises every one of
+those contrast figures rather than lowering one, so the four categorical
+slots were left exactly as validated. Only the brand-tied values moved:
+byte class `null` tracks the panel, `0xff` is `--text`, and the
+brush-to-locate ink is `--alert` (`--rose` sits too close to the `high`
+class to survive a raster full of it).
 
 **Re-run the validator before changing any of them.** Three things that
 contradict what eyeballing suggests, learned doing it:

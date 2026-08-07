@@ -16,23 +16,37 @@
 
 <style>
   :root {
-    --cream:   #FCF2E5;
-    --accent:  #EC5B38;
-    --bg:      #524646;
-    --sage:    #A8A492;
-    --panel:   #453B3B;
-    --field:   #372F2F;
-    --ink:     #2B2424;
-    --hair:    rgba(168, 164, 146, 0.22);
+    /* --- your palette ------------------------------------------------ */
+    --ink:    #1A1A1D;   /* page, recessed fields                        */
+    --plum:   #3B1C32;   /* card panel, icon tile                        */
+    --deep:   #6A1E55;   /* low-entropy band, pressed button, EOF node   */
+    --rose:   #A64D79;   /* accent: primary action, focus, high entropy  */
+
+    /* --- added, because the palette above has no legible text value ---
+       Its brightest colour (--rose) reaches only 3.27:1 on --ink, short
+       of the 4.5:1 needed for body text. These two are tinted off the
+       same hue so they read as part of the family.                      */
+    --text:   #F7EFF4;   /* 15.4:1 on --ink, 13.3:1 on --plum            */
+    --muted:  #C98CA8;   /* 6.5:1 on --ink, 5.6:1 on --plum              */
+
+    /* Errors need to be distinguishable from the primary action, and
+       --rose is already the button. Set this to var(--rose) if you would
+       rather stay strictly within the four.                             */
+    --alert:  #FF7A8A;   /* 6.0:1 on --plum                              */
+
+    --hair: rgba(166, 77, 121, 0.30);
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
             "Liberation Mono", "Courier New", monospace;
     --ease: cubic-bezier(0.65, 0, 0.35, 1);
     --settle: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --strip-lo: var(--deep);
+    --strip-hi: var(--rose);
   }
 
   * { box-sizing: border-box; }
 
-  ::selection { background: var(--accent); color: var(--ink); }
+  ::selection { background: var(--rose); color: var(--ink); }
 
   html, body { height: 100%; }
 
@@ -42,8 +56,8 @@
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: var(--bg);
-    color: var(--cream);
+    background: var(--ink);
+    color: var(--text);
     font-family: var(--mono);
     font-size: 14px;
     line-height: 1.5;
@@ -65,7 +79,7 @@
     z-index: 10;
     display: grid;
     place-items: center;
-    background: var(--bg);
+    background: var(--ink);
   }
 
   .splash-inner { text-align: center; }
@@ -96,7 +110,7 @@
     letter-spacing: 0.42em;
     text-indent: 0.42em;
     text-transform: uppercase;
-    color: var(--cream);
+    color: var(--text);
   }
   .boot .splash-word {
     opacity: 0;
@@ -112,12 +126,11 @@
     margin: 12px 0 0;
     font-size: 10.5px;
     letter-spacing: 0.22em;
-    color: var(--sage);
-    opacity: 0.7;
+    color: var(--muted);
     font-variant-numeric: tabular-nums;
   }
   .boot .splash-offset { opacity: 0; animation: pop 320ms ease-out 240ms forwards; }
-  .boot .splash-offset.is-lit { opacity: 0.7; animation: none; }
+  .boot .splash-offset.is-lit { opacity: 1; animation: none; }
 
   .splash.is-done { animation: splash-out 340ms ease-in forwards; }
   @keyframes splash-out {
@@ -129,7 +142,7 @@
   .card {
     width: 100%;
     max-width: 380px;
-    background: var(--panel);
+    background: var(--plum);
     border: 1px solid var(--hair);
     border-radius: 10px;
     overflow: hidden;
@@ -150,12 +163,11 @@
     display: block;
     width: 100%;
     height: 10px;
-    color: var(--sage);
     border-bottom: 1px solid var(--hair);
   }
-  .card.is-error .entropy { color: var(--accent); }
+  .card.is-error { --strip-lo: var(--rose); --strip-hi: var(--alert); }
   @media (prefers-reduced-motion: no-preference) {
-    .entropy { transition: color 180ms ease-out; }
+    .entropy rect { transition: fill 180ms ease-out; }
   }
 
   .boot .entropy { clip-path: inset(0 100% 0 0); }
@@ -183,14 +195,14 @@
     letter-spacing: 0.32em;
     text-indent: 0.32em;
     text-transform: uppercase;
-    color: var(--cream);
+    color: var(--text);
   }
   .tagline {
     margin: 3px 0 0;
     font-size: 10.5px;
     letter-spacing: 0.17em;
     text-transform: uppercase;
-    color: var(--sage);
+    color: var(--muted);
   }
 
   /* ---- fields ----------------------------------------------------- */
@@ -204,7 +216,7 @@
     font-weight: 500;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--sage);
+    color: var(--muted);
   }
 
   input {
@@ -212,8 +224,8 @@
     padding: 11px 13px;
     font: inherit;
     font-size: 15px;
-    color: var(--cream);
-    background: var(--field);
+    color: var(--text);
+    background: var(--ink);
     border: 1px solid var(--hair);
     border-radius: 5px;
     outline: none;
@@ -221,13 +233,13 @@
   @media (prefers-reduced-motion: no-preference) {
     input { transition: border-color 140ms ease-out, box-shadow 140ms ease-out; }
   }
-  input::placeholder { color: rgba(168, 164, 146, 0.45); }
-  input:hover { border-color: rgba(168, 164, 146, 0.4); }
+  input::placeholder { color: rgba(201, 140, 168, 0.45); }
+  input:hover { border-color: rgba(201, 140, 168, 0.45); }
   input:focus-visible {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(236, 91, 56, 0.24);
+    border-color: var(--rose);
+    box-shadow: 0 0 0 3px rgba(166, 77, 121, 0.30);
   }
-  input[aria-invalid="true"] { border-color: var(--accent); }
+  input[aria-invalid="true"] { border-color: var(--alert); }
 
   /* ---- error ------------------------------------------------------ */
 
@@ -238,7 +250,7 @@
     margin: -2px 0 16px;
     font-size: 12px;
     line-height: 1.45;
-    color: var(--accent);
+    color: var(--alert);
   }
   .error:empty { display: block; }
   .error::before {
@@ -259,22 +271,22 @@
     letter-spacing: 0.2em;
     text-indent: 0.2em;
     text-transform: uppercase;
-    color: var(--ink);
-    background: var(--accent);
-    border: 1px solid var(--accent);
+    color: var(--text);
+    background: var(--rose);
+    border: 1px solid var(--rose);
     border-radius: 5px;
     cursor: pointer;
     outline: none;
   }
   @media (prefers-reduced-motion: no-preference) {
-    button { transition: filter 140ms ease-out; }
+    button { transition: box-shadow 140ms ease-out, background-color 140ms ease-out; }
   }
-  button:hover:not(:disabled) { filter: brightness(1.1); }
-  button:active:not(:disabled) { filter: brightness(0.92); }
+  button:hover:not(:disabled) { box-shadow: 0 0 0 3px rgba(166, 77, 121, 0.32); }
+  button:active:not(:disabled) { background: var(--deep); border-color: var(--deep); }
   button:disabled { opacity: 0.55; cursor: default; }
 
   button:focus-visible {
-    box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--cream);
+    box-shadow: 0 0 0 2px var(--plum), 0 0 0 4px var(--text);
   }
 
   /* ---- footer ----------------------------------------------------- */
@@ -284,8 +296,7 @@
     font-size: 10px;
     letter-spacing: 0.11em;
     text-align: center;
-    color: var(--sage);
-    opacity: 0.66;
+    color: var(--muted);
   }
 
   @media (max-width: 400px) {
@@ -300,14 +311,14 @@
   <div class="splash" id="splash" aria-hidden="true">
     <div class="splash-inner">
       <svg class="splash-mark" viewBox="0 0 1024 1024" focusable="false">
-        <rect width="1024" height="1024" rx="208" fill="#524646"/>
+        <rect width="1024" height="1024" rx="208" fill="#3B1C32"/>
         <path class="trace"
               d="M146 146 H390 V390 H146 V878 H390 V634 H634 V878 H878 V390 H634 V146 H878"
               pathLength="1000"
-              fill="none" stroke="#EC5B38" stroke-width="128"
+              fill="none" stroke="#A64D79" stroke-width="128"
               stroke-linecap="round" stroke-linejoin="round"/>
-        <circle class="cap-start" cx="146" cy="146" r="64" fill="#FCF2E5"/>
-        <circle class="cap-end"   cx="878" cy="146" r="64" fill="#A8A492"/>
+        <circle class="cap-start" cx="146" cy="146" r="64" fill="#F7EFF4"/>
+        <circle class="cap-end"   cx="878" cy="146" r="64" fill="#6A1E55"/>
       </svg>
       <p class="splash-word">Striate</p>
       <p class="splash-offset" id="offset">0x00000000</p>
@@ -318,87 +329,89 @@
 
     <svg class="entropy" viewBox="0 0 560 28" preserveAspectRatio="none"
          aria-hidden="true" focusable="false">
-      <g fill="currentColor">
-        <rect x="0" y="18" width="5.4" height="10" opacity="0.45"/>
-        <rect x="7" y="11" width="5.4" height="17" opacity="0.62"/>
-        <rect x="14" y="8" width="5.4" height="20" opacity="0.7"/>
-        <rect x="21" y="6" width="5.4" height="22" opacity="0.75"/>
-        <rect x="28" y="1" width="5.4" height="27" opacity="0.88"/>
-        <rect x="35" y="3" width="5.4" height="25" opacity="0.82"/>
-        <rect x="42" y="4" width="5.4" height="24" opacity="0.8"/>
-        <rect x="49" y="10" width="5.4" height="18" opacity="0.65"/>
-        <rect x="56" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="63" y="17" width="5.4" height="11" opacity="0.47"/>
-        <rect x="70" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="77" y="10" width="5.4" height="18" opacity="0.65"/>
-        <rect x="84" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="91" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="98" y="16" width="5.4" height="12" opacity="0.5"/>
-        <rect x="105" y="18" width="5.4" height="10" opacity="0.45"/>
-        <rect x="112" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="119" y="17" width="5.4" height="11" opacity="0.47"/>
-        <rect x="126" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="133" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="140" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="147" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="154" y="4" width="5.4" height="24" opacity="0.8"/>
-        <rect x="161" y="2" width="5.4" height="26" opacity="0.85"/>
-        <rect x="168" y="0" width="5.4" height="28" opacity="0.9"/>
-        <rect x="175" y="6" width="5.4" height="22" opacity="0.75"/>
-        <rect x="182" y="6" width="5.4" height="22" opacity="0.75"/>
-        <rect x="189" y="9" width="5.4" height="19" opacity="0.68"/>
-        <rect x="196" y="15" width="5.4" height="13" opacity="0.53"/>
-        <rect x="203" y="11" width="5.4" height="17" opacity="0.62"/>
-        <rect x="210" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="217" y="10" width="5.4" height="18" opacity="0.65"/>
-        <rect x="224" y="1" width="5.4" height="27" opacity="0.88"/>
-        <rect x="231" y="4" width="5.4" height="24" opacity="0.8"/>
-        <rect x="238" y="3" width="5.4" height="25" opacity="0.82"/>
-        <rect x="245" y="8" width="5.4" height="20" opacity="0.7"/>
-        <rect x="252" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="259" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="266" y="16" width="5.4" height="12" opacity="0.5"/>
-        <rect x="273" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="280" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="287" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="294" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="301" y="18" width="5.4" height="10" opacity="0.45"/>
-        <rect x="308" y="18" width="5.4" height="10" opacity="0.45"/>
-        <rect x="315" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="322" y="15" width="5.4" height="13" opacity="0.53"/>
-        <rect x="329" y="18" width="5.4" height="10" opacity="0.45"/>
-        <rect x="336" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="343" y="9" width="5.4" height="19" opacity="0.68"/>
-        <rect x="350" y="8" width="5.4" height="20" opacity="0.7"/>
-        <rect x="357" y="3" width="5.4" height="25" opacity="0.82"/>
-        <rect x="364" y="7" width="5.4" height="21" opacity="0.72"/>
-        <rect x="371" y="1" width="5.4" height="27" opacity="0.88"/>
-        <rect x="378" y="2" width="5.4" height="26" opacity="0.85"/>
-        <rect x="385" y="8" width="5.4" height="20" opacity="0.7"/>
-        <rect x="392" y="10" width="5.4" height="18" opacity="0.65"/>
-        <rect x="399" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="406" y="9" width="5.4" height="19" opacity="0.68"/>
-        <rect x="413" y="6" width="5.4" height="22" opacity="0.75"/>
-        <rect x="420" y="8" width="5.4" height="20" opacity="0.7"/>
-        <rect x="427" y="6" width="5.4" height="22" opacity="0.75"/>
-        <rect x="434" y="3" width="5.4" height="25" opacity="0.82"/>
-        <rect x="441" y="7" width="5.4" height="21" opacity="0.72"/>
-        <rect x="448" y="6" width="5.4" height="22" opacity="0.75"/>
-        <rect x="455" y="16" width="5.4" height="12" opacity="0.5"/>
-        <rect x="462" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="469" y="14" width="5.4" height="14" opacity="0.55"/>
-        <rect x="476" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="483" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="490" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="497" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="504" y="19" width="5.4" height="9" opacity="0.43"/>
-        <rect x="511" y="11" width="5.4" height="17" opacity="0.62"/>
-        <rect x="518" y="15" width="5.4" height="13" opacity="0.53"/>
-        <rect x="525" y="16" width="5.4" height="12" opacity="0.5"/>
-        <rect x="532" y="13" width="5.4" height="15" opacity="0.57"/>
-        <rect x="539" y="11" width="5.4" height="17" opacity="0.62"/>
-        <rect x="546" y="12" width="5.4" height="16" opacity="0.6"/>
-        <rect x="553" y="5" width="5.4" height="23" opacity="0.77"/>
+      <g fill="var(--strip-lo)">
+        <rect x="0" y="18" width="5.4" height="10" opacity="0.71"/>
+        <rect x="56" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="63" y="17" width="5.4" height="11" opacity="0.73"/>
+        <rect x="70" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="84" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="91" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="98" y="16" width="5.4" height="12" opacity="0.74"/>
+        <rect x="105" y="18" width="5.4" height="10" opacity="0.71"/>
+        <rect x="112" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="119" y="17" width="5.4" height="11" opacity="0.73"/>
+        <rect x="126" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="133" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="140" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="147" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="196" y="15" width="5.4" height="13" opacity="0.76"/>
+        <rect x="210" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="252" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="259" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="266" y="16" width="5.4" height="12" opacity="0.74"/>
+        <rect x="273" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="280" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="287" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="294" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="301" y="18" width="5.4" height="10" opacity="0.71"/>
+        <rect x="308" y="18" width="5.4" height="10" opacity="0.71"/>
+        <rect x="315" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="322" y="15" width="5.4" height="13" opacity="0.76"/>
+        <rect x="329" y="18" width="5.4" height="10" opacity="0.71"/>
+        <rect x="336" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="399" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="455" y="16" width="5.4" height="12" opacity="0.74"/>
+        <rect x="462" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="469" y="14" width="5.4" height="14" opacity="0.78"/>
+        <rect x="476" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="483" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="490" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="497" y="12" width="5.4" height="16" opacity="0.81"/>
+        <rect x="504" y="19" width="5.4" height="9" opacity="0.69"/>
+        <rect x="518" y="15" width="5.4" height="13" opacity="0.76"/>
+        <rect x="525" y="16" width="5.4" height="12" opacity="0.74"/>
+        <rect x="532" y="13" width="5.4" height="15" opacity="0.79"/>
+        <rect x="546" y="12" width="5.4" height="16" opacity="0.81"/>
+      </g>
+      <g fill="var(--strip-hi)">
+        <rect x="7" y="11" width="5.4" height="17" opacity="0.82"/>
+        <rect x="14" y="8" width="5.4" height="20" opacity="0.87"/>
+        <rect x="21" y="6" width="5.4" height="22" opacity="0.9"/>
+        <rect x="28" y="1" width="5.4" height="27" opacity="0.98"/>
+        <rect x="35" y="3" width="5.4" height="25" opacity="0.95"/>
+        <rect x="42" y="4" width="5.4" height="24" opacity="0.94"/>
+        <rect x="49" y="10" width="5.4" height="18" opacity="0.84"/>
+        <rect x="77" y="10" width="5.4" height="18" opacity="0.84"/>
+        <rect x="154" y="4" width="5.4" height="24" opacity="0.94"/>
+        <rect x="161" y="2" width="5.4" height="26" opacity="0.97"/>
+        <rect x="168" y="0" width="5.4" height="28" opacity="1.0"/>
+        <rect x="175" y="6" width="5.4" height="22" opacity="0.9"/>
+        <rect x="182" y="6" width="5.4" height="22" opacity="0.9"/>
+        <rect x="189" y="9" width="5.4" height="19" opacity="0.86"/>
+        <rect x="203" y="11" width="5.4" height="17" opacity="0.82"/>
+        <rect x="217" y="10" width="5.4" height="18" opacity="0.84"/>
+        <rect x="224" y="1" width="5.4" height="27" opacity="0.98"/>
+        <rect x="231" y="4" width="5.4" height="24" opacity="0.94"/>
+        <rect x="238" y="3" width="5.4" height="25" opacity="0.95"/>
+        <rect x="245" y="8" width="5.4" height="20" opacity="0.87"/>
+        <rect x="343" y="9" width="5.4" height="19" opacity="0.86"/>
+        <rect x="350" y="8" width="5.4" height="20" opacity="0.87"/>
+        <rect x="357" y="3" width="5.4" height="25" opacity="0.95"/>
+        <rect x="364" y="7" width="5.4" height="21" opacity="0.89"/>
+        <rect x="371" y="1" width="5.4" height="27" opacity="0.98"/>
+        <rect x="378" y="2" width="5.4" height="26" opacity="0.97"/>
+        <rect x="385" y="8" width="5.4" height="20" opacity="0.87"/>
+        <rect x="392" y="10" width="5.4" height="18" opacity="0.84"/>
+        <rect x="406" y="9" width="5.4" height="19" opacity="0.86"/>
+        <rect x="413" y="6" width="5.4" height="22" opacity="0.9"/>
+        <rect x="420" y="8" width="5.4" height="20" opacity="0.87"/>
+        <rect x="427" y="6" width="5.4" height="22" opacity="0.9"/>
+        <rect x="434" y="3" width="5.4" height="25" opacity="0.95"/>
+        <rect x="441" y="7" width="5.4" height="21" opacity="0.89"/>
+        <rect x="448" y="6" width="5.4" height="22" opacity="0.9"/>
+        <rect x="511" y="11" width="5.4" height="17" opacity="0.82"/>
+        <rect x="539" y="11" width="5.4" height="17" opacity="0.82"/>
+        <rect x="553" y="5" width="5.4" height="23" opacity="0.92"/>
       </g>
     </svg>
 
@@ -406,12 +419,12 @@
 
       <header class="mast">
         <svg viewBox="0 0 1024 1024" role="img" aria-label="Striate">
-            <rect width="1024" height="1024" rx="208" fill="#524646"/>
+            <rect width="1024" height="1024" rx="208" fill="#3B1C32"/>
           <path d="M146 146 H390 V390 H146 V878 H390 V634 H634 V878 H878 V390 H634 V146 H878"
-                fill="none" stroke="#EC5B38" stroke-width="128"
+                fill="none" stroke="#A64D79" stroke-width="128"
                 stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="146" cy="146" r="64" fill="#FCF2E5"/>
-          <circle cx="878" cy="146" r="64" fill="#A8A492"/>
+          <circle cx="146" cy="146" r="64" fill="#F7EFF4"/>
+          <circle cx="878" cy="146" r="64" fill="#6A1E55"/>
         </svg>
         <div>
           <h1 class="wordmark">Striate</h1>

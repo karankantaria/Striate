@@ -6,6 +6,7 @@ on PATH. Both compare instruction start addresses and sizes, never
 mnemonic text — syntax flavours differ and that is not a disagreement.
 """
 
+import bisect
 import re
 import shutil
 import subprocess
@@ -126,6 +127,49 @@ def _find_objdump():
     return None
 
 
+def _objdump_lines(out: str) -> dict[int, str]:
+    """addr -> objdump's own text for that address."""
+    return {int(m.group(1), 16): m.group(2).rstrip()
+            for m in re.finditer(r"^\s*([0-9a-f]+):\s*(.*)$", out, re.M)}
+
+
+def _divergence_report(divergent, ours, odlines, code, va, limit=6) -> str:
+    """Both decoders' view of every site where they disagree.
+
+    A bare set difference names the addresses and hides the only thing that
+    explains them: two linear sweeps diverge where one resynchronises after
+    bytes the other decoded, so what matters is the *window* on each side
+    and the raw bytes under it. Printed on failure because this test cannot
+    run on Windows — it skips without objdump, so a maintainer who cannot
+    reproduce the failure locally has nothing else to go on.
+    """
+    order = sorted(odlines)
+    lines = []
+    for addr in sorted(divergent)[:limit]:
+        side = "ours only" if addr in ours else "objdump only"
+        off = addr - va
+        lo = max(0, off - 8)
+        lines.append(f"\n=== {addr:#x} ({side}) ===")
+        lines.append(f"  bytes {addr - (off - lo):#x}: "
+                     f"{code[lo:off + 16].hex(' ')}")
+        i = bisect.bisect_left(order, addr)
+        lines.append("  objdump:")
+        for a in order[max(0, i - 3):i + 4]:
+            lines.append(f"   {'>>' if a == addr else '  '} {a:#x}: "
+                         f"{odlines[a]}")
+        lines.append("  binviz:")
+        for a in sorted(x for x in ours if abs(x - addr) <= 24)[:8]:
+            insn = ours[a]
+            lines.append(
+                f"   {'>>' if a == addr else '  '} {a:#x}: "
+                f"{insn.mnemonic} {insn.op_str}".rstrip()
+                + f"  (size {insn.size}"
+                + (", invalid" if insn.is_invalid else "") + ")")
+    if len(divergent) > limit:
+        lines.append(f"\n... and {len(divergent) - limit} more")
+    return "\n".join(lines)
+
+
 @pytest.mark.parametrize("name", ["hello_O2", "hello_static"])
 def test_differential_objdump(name, manifest):
     objdump = _find_objdump()
@@ -135,11 +179,18 @@ def test_differential_objdump(name, manifest):
     out = subprocess.run(
         [objdump, "-d", "-j", ".text", "-z", "--no-show-raw-insn", path],
         capture_output=True, text=True, check=True).stdout
-    oracle = {int(m.group(1), 16)
-              for m in re.finditer(r"^\s*([0-9a-f]+):\s", out, re.M)}
+    odlines = _objdump_lines(out)
+    oracle = set(odlines)
     code, va, _m = text_bytes(path)
-    ours = set(linear_sweep(code, va, "x86_64"))
-    assert ours == oracle
+    # detail=False on purpose: the detail path stops at the first
+    # undecodable byte, which would change the very result under test.
+    ours = linear_sweep(code, va, "x86_64")
+    divergent = set(ours) ^ oracle
+    assert not divergent, (
+        f"{len(divergent)} of {len(oracle)} instruction starts differ: "
+        f"{len(set(ours) - oracle)} ours-only, "
+        f"{len(oracle - set(ours))} objdump-only"
+        + _divergence_report(divergent, ours, odlines, code, va))
 
 
 # ------------------------------------------------- recursive descent

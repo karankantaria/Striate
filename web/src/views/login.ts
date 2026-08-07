@@ -5,16 +5,16 @@
    looks. What it establishes and this must keep:
 
    - The boot sequence: the Hilbert mark draws itself the way Striate walks
-     a file — cream cap pops at offset 0, the stroke traces, the sage cap
-     lands at EOF, the wordmark rises, the splash wipes to the card. The
+     a file — the light cap pops at offset 0, the stroke traces, the deep
+     cap lands at EOF, the wordmark rises, the splash wipes to the card. The
      offset readout ticks on the same easing curve as the stroke, so the
-     number and the trace reach the end together. That semantic (cream =
-     offset 0, sage = EOF) is load-bearing per RELEASE.md §3; do not
+     number and the trace reach the end together. That semantic (--text =
+     offset 0, --deep = EOF) is load-bearing per RELEASE.md §3; do not
      recolour the caps.
    - `.boot` is set only when JS runs **and** `prefers-reduced-motion` is
      not set. Everything animated is scoped to it, so without it the page
      renders in its final state rather than in a broken half-state.
-   - Real labels, real tab order, Enter submits, errors in `--accent`, and
+   - Real labels, real tab order, Enter submits, errors in `--alert`, and
      a reserved error line so the card never jumps.
 
    What is *not* here: any belief that this screen is the security
@@ -50,7 +50,7 @@ function mark(traced: boolean): SVGSVGElement {
   bg.setAttribute("width", "1024");
   bg.setAttribute("height", "1024");
   bg.setAttribute("rx", "208");
-  bg.setAttribute("fill", "#524646");
+  bg.setAttribute("fill", "#3B1C32");
 
   const path = document.createElementNS(ns, "path");
   if (traced) path.setAttribute("class", "trace");
@@ -58,7 +58,7 @@ function mark(traced: boolean): SVGSVGElement {
                        + "H878 V390 H634 V146 H878");
   path.setAttribute("pathLength", "1000");
   path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "#EC5B38");
+  path.setAttribute("stroke", "#A64D79");
   path.setAttribute("stroke-width", "128");
   path.setAttribute("stroke-linecap", "round");
   path.setAttribute("stroke-linejoin", "round");
@@ -74,8 +74,8 @@ function mark(traced: boolean): SVGSVGElement {
   };
 
   svg.append(bg, path,
-             cap("cap-start", "146", "#FCF2E5"),   // offset 0
-             cap("cap-end", "878", "#A8A492"));    // EOF
+             cap("cap-start", "146", "#F7EFF4"),   // offset 0
+             cap("cap-end", "878", "#6A1E55"));    // EOF
   return svg;
 }
 
@@ -91,6 +91,11 @@ const STRIP = [
   9, 17, 13, 12, 15, 17, 16, 23,
 ];
 
+/** Bars at or above this fraction of full height are the high-entropy
+    band. The split is the encoding: two inks, not one ink at two
+    opacities, so the strip says something a gradient could not. */
+const STRIP_SPLIT = 0.60;
+
 function entropyStrip(): SVGSVGElement {
   const ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg");
@@ -99,18 +104,22 @@ function entropyStrip(): SVGSVGElement {
   svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
-  const g = document.createElementNS(ns, "g");
-  g.setAttribute("fill", "currentColor");
+  // two groups rather than a fill per rect: the error state re-points
+  // --strip-lo/--strip-hi and both bands move together
+  const lo = document.createElementNS(ns, "g");
+  lo.setAttribute("fill", "var(--strip-lo)");
+  const hi = document.createElementNS(ns, "g");
+  hi.setAttribute("fill", "var(--strip-hi)");
   STRIP.forEach((h, i) => {
     const r = document.createElementNS(ns, "rect");
     r.setAttribute("x", String(i * 7));
     r.setAttribute("y", String(28 - h));
     r.setAttribute("width", "5.4");
     r.setAttribute("height", String(h));
-    r.setAttribute("opacity", (0.4 + (h / 28) * 0.5).toFixed(2));
-    g.appendChild(r);
+    r.setAttribute("opacity", (0.55 + (h / 28) * 0.45).toFixed(2));
+    (h / 28 >= STRIP_SPLIT ? hi : lo).appendChild(r);
   });
-  svg.appendChild(g);
+  svg.append(lo, hi);
   return svg;
 }
 
@@ -198,6 +207,7 @@ export function showLogin(host: HTMLElement,
       window.removeEventListener("pointerdown", reveal);
       window.removeEventListener("keydown", reveal);
       offset.textContent = hex(EOF_OFFSET);
+      offset.classList.add("is-lit");
       splash.classList.add("is-done");
       card.classList.add("is-in");
       // focus moves to the form only once the splash is gone, so a
@@ -220,6 +230,7 @@ export function showLogin(host: HTMLElement,
           (now - t0 - TRACE_DELAY_MS) / TRACE_MS));
         offset.textContent = hex(Math.round(ease(p) * EOF_OFFSET));
         if (p < 1 && !finished) raf = requestAnimationFrame(tick);
+        else offset.classList.add("is-lit");   // hold it lit at EOF
       };
       raf = requestAnimationFrame(tick);
       // any input cuts it short: this is a screen you see every day on a

@@ -31,9 +31,17 @@ dependencies = [
     # lief, so a narrow range costs almost no resolution pain. Re-run the
     # parser tests before widening this.
     "lief>=1.0,<1.1",
-    # 5.0.1, not 5.0: 5.0.0 is yanked on PyPI ("wrong"), and a floor that
-    # resolves to a yanked release is a floor nobody should land on.
-    "capstone>=5.0.1,<6",
+    # 5.0.2, not 5.0.1, and not 5.0: 5.0.0 is yanked on PyPI ("wrong"), and
+    # a floor that resolves to a yanked release is a floor nobody should
+    # land on. 5.0.1 was the floor until the `floors` job first ran and
+    # failed it on two counts: RIP-relative `lea` yields no pointer
+    # immediate (`ptr_imms == ()`), which costs function discovery its
+    # pointer seeds and makes `skipdata` fail to resync; and it imports
+    # `pkg_resources` at import time, which setuptools >= 81 no longer
+    # ships, so it does not import at all in a current environment.
+    # 5.0.2 is the lowest version where decode starts, ptr_imms and
+    # skipdata are all correct — measured, not assumed.
+    "capstone>=5.0.2,<6",
     "numpy>=2.1,<3",
     "fastapi>=0.115,<1",
     "uvicorn>=0.30,<1",

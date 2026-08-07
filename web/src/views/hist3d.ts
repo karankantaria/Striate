@@ -445,7 +445,7 @@ export class Hist3DView {
     ctx.clearRect(0, 0, w, h);
     ctx.font = "10px ui-monospace, monospace";
     ctx.textAlign = "center";
-    const ink2 = css.getPropertyValue("--ink-2").trim();
+    const ink2 = css.getPropertyValue("--text").trim();
     const muted = css.getPropertyValue("--muted").trim();
 
     const project = (p: [number, number, number]): [number, number] | null => {

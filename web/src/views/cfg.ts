@@ -47,8 +47,8 @@ const HEADER_FONT = `10px ui-monospace, Consolas, monospace`;
    aqua/orange (they must never be confusable), unconditional flow is
    neutral, unresolved-indirect is the fuchsia reserved for uncertainty. */
 const EDGE_INK: Record<string, string> = {
-  true: "#25ae56", false: "#cf4946", uncond: "#a8a492",
-  fallthrough: "#a8a492", indirect_unresolved: "#a644a0",
+  true: "#25ae56", false: "#cf4946", uncond: "#c98ca8",
+  fallthrough: "#c98ca8", indirect_unresolved: "#a644a0",
 };
 
 const BADGE_TITLES: Record<string, string> = {
@@ -464,12 +464,15 @@ export class CfgView {
     ctx.setTransform(dpr * t.scale, 0, 0, dpr * t.scale, dpr * t.tx, dpr * t.ty);
     const showText = t.scale >= TEXT_MIN_SCALE;
 
-    const ink = this.css("--ink");
-    const ink2 = this.css("--ink-2");
+    // --text for the disassembly, --ink for the block fill: the block is a
+    // well cut into the pane, so it is filled with the page colour and the
+    // instructions inside it are set in primary ink.
+    const ink = this.css("--text");
+    const ink2 = this.css("--muted");
     const muted = this.css("--muted");
-    const surface = this.css("--page");
+    const surface = this.css("--ink");
     const border = this.css("--baseline");
-    const accent = this.css("--accent");
+    const accent = this.css("--rose");
     const selFill = this.css("--select-fill");
     const edgeInk = EDGE_INK;
 
@@ -535,7 +538,7 @@ export class CfgView {
       ctx.fillText(fmtHex(b.va), n.x + PAD_X, n.y + HEADER_H / 2 + 1);
       const term = b.terminator;
       const termInk = term === "indirect" ? edgeInk.indirect_unresolved
-        : term === "invalid" ? "#d03b3b" : muted;
+        : term === "invalid" ? "#ff7a8a" : muted;   // == --alert
       ctx.fillStyle = termInk;
       const tw = ctx.measureText(term).width;
       ctx.fillText(term, n.x + n.w - PAD_X - tw, n.y + HEADER_H / 2 + 1);

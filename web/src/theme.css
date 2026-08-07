@@ -5,39 +5,49 @@
    here is duplicated and nothing can drift out of step. The byte-class and
    series colours live in colormap.ts because they are painted into
    canvases rather than applied as CSS — they were stepped against
-   `--panel` and validated for colour-vision deficiency, so re-run the
+   `--plum` and validated for colour-vision deficiency, so re-run the
    validator if you touch them.
 
    Type is all-monospace, per RELEASE.md, from the system stack. No
    external fonts, ever: the tool must work offline, and a font request is
-   a network request. */
+   a network request.
+
+   **The brand ramp carries no text colour.** The four brand values are a
+   single-hue ramp with no light value — the brightest, --rose, reaches
+   only 3.27:1 on --ink, short of the 4.5:1 body-text threshold. --text and
+   --muted are two neutrals tinted off the same hue so they read as family;
+   they are the *only* two values text is ever set in. There is no third,
+   dimmer step and no reduced-opacity treatment of these: at 0.66 --muted
+   falls to 3.3:1. Where the old palette leaned on a dimmer ink for
+   hierarchy, size and tracking carry it now. */
 
 :root {
   color-scheme: dark;
 
   /* RELEASE.md §3, exactly */
-  --bg: #524646;             /* page */
-  --panel: #453b3b;          /* recessed cards / panes — the chart surface */
-  --field: #372f2f;          /* inputs, wells */
-  --cream: #fcf2e5;          /* primary text; the "offset 0" cap */
-  --sage: #a8a492;           /* labels, metadata; the "EOF" cap */
-  --accent: #ec5b38;         /* buttons, focus, every error signal */
-  --ink: #2b2424;            /* text on accent surfaces */
-  --hair: rgba(168, 164, 146, 0.22);
+  --ink: #1a1a1d;            /* page, and the recessed fields on a card */
+  --plum: #3b1c32;           /* cards / panes — the chart surface — icon tile */
+  --deep: #6a1e55;           /* low-entropy band, pressed button, "EOF" cap */
+  --rose: #a64d79;           /* buttons, focus, high entropy, the curve stroke */
+  --text: #f7eff4;           /* primary text; the "offset 0" cap */
+  --muted: #c98ca8;          /* labels, metadata */
+  /* Errors are not --rose: --rose is the primary action, and an error
+     signal must not be the colour of the button you just pressed. Set this
+     to var(--rose) to stay strictly inside the four-value ramp — every
+     error-related rule in this sheet is wired through it. */
+  --alert: #ff7a8a;
+  --hair: rgba(166, 77, 121, 0.30);
 
-  /* The names the rest of this sheet already used, mapped onto the above
-     rather than renamed across 400 lines. --surface-1 is --panel and so
-     on; keeping both spellings would be how two palettes start. */
-  --surface-1: var(--panel);
-  --page: var(--bg);
-  --ink-1: var(--cream);
-  --ink-2: var(--sage);
-  --muted: rgba(168, 164, 146, 0.72);
-  --grid: #4d4242;           /* one step off the panel: hover, chips */
-  --baseline: rgba(168, 164, 146, 0.34);
+  /* The structural names the rest of this sheet uses. --field is --ink
+     rather than a fifth value: a recessed well inside a --plum card reads
+     by being the page colour showing through, which is also how the login
+     card does it. */
+  --field: var(--ink);
+  --grid: #4a2440;           /* one step off the panel: hover, chips */
+  --baseline: rgba(201, 140, 168, 0.34);
   --border: var(--hair);
-  --select-fill: rgba(236, 91, 56, 0.20);
-  --select-edge: var(--accent);
+  --select-fill: rgba(166, 77, 121, 0.28);
+  --select-edge: var(--rose);
 
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
           "Liberation Mono", "Courier New", monospace;
@@ -47,13 +57,13 @@
 
 * { box-sizing: border-box; }
 
-::selection { background: var(--accent); color: var(--ink); }
+::selection { background: var(--rose); color: var(--text); }
 
 html, body, #app { height: 100%; margin: 0; }
 
 body {
-  background: var(--page);
-  color: var(--cream);
+  background: var(--ink);
+  color: var(--text);
   font: 13px/1.45 var(--mono);
   -webkit-font-smoothing: antialiased;
 }
@@ -66,7 +76,7 @@ body {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-1);
+  background: var(--plum);
 }
 #toolbar .brand { font-weight: 700; letter-spacing: 0.04em; margin-right: 4px; }
 #toolbar .spacer { flex: 1; }
@@ -75,26 +85,26 @@ body {
   padding: 5px 8px;
   border: 1px solid var(--baseline);
   border-radius: 6px;
-  background: var(--page);
-  color: var(--cream);
+  background: var(--ink);
+  color: var(--text);
   font: inherit;
 }
 button {
   padding: 5px 10px;
   border: 1px solid var(--baseline);
   border-radius: 6px;
-  background: var(--surface-1);
-  color: var(--cream);
+  background: var(--plum);
+  color: var(--text);
   font: inherit;
   cursor: pointer;
 }
-button:hover { border-color: var(--accent); }
+button:hover { border-color: var(--rose); }
 select {
   padding: 3px 6px;
   border: 1px solid var(--baseline);
   border-radius: 6px;
-  background: var(--surface-1);
-  color: var(--cream);
+  background: var(--plum);
+  color: var(--text);
   font: inherit;
 }
 .chip {
@@ -102,11 +112,13 @@ select {
   border-radius: 10px;
   font-size: 12px;
   background: var(--grid);
-  color: var(--ink-2);
+  color: var(--muted);
 }
-/* RELEASE.md §3: every error signal is --accent, with --ink on top */
-.chip.err { background: var(--accent); color: var(--ink); }
-.file-label { color: var(--ink-2); font-size: 12px; }
+/* RELEASE.md §3: every error signal is --alert. --ink on top rather than
+   --text, because --alert is the one light-enough value in the sheet and
+   dark ink is what reads on it. */
+.chip.err { background: var(--alert); color: var(--ink); }
+.file-label { color: var(--muted); font-size: 12px; }
 
 /* --------------------------------------------------------- workspaces
    §3.4. Ten panes rendered at once with no way to focus or collapse; the
@@ -118,7 +130,7 @@ select {
   display: flex; gap: 2px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface-1);
+  background: var(--plum);
 }
 #workspace-tabs[hidden] { display: none; }
 .wtab {
@@ -132,11 +144,11 @@ select {
   letter-spacing: 0.03em;
   cursor: pointer;
 }
-.wtab:hover { color: var(--ink-2); border-bottom-color: var(--baseline); }
+.wtab:hover { color: var(--muted); border-bottom-color: var(--baseline); }
 .wtab[aria-selected="true"] {
-  color: var(--cream); border-bottom-color: var(--accent);
+  color: var(--text); border-bottom-color: var(--rose);
 }
-.wtab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wtab:focus-visible { outline: 2px solid var(--rose); outline-offset: -2px; }
 
 /* ------------------------------------------------------------- layout */
 
@@ -222,9 +234,14 @@ select {
   color: var(--muted);
   font-size: 12px; line-height: 1.2;
 }
-.pane-focus:hover { color: var(--accent); }
-.pane-focus[aria-pressed="true"] { color: var(--accent); }
-.pane-focus:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* --rose is 2.8:1 on the pane, so the state cannot be carried by setting
+   this 12px glyph in it. Hover brightens the ink; pressed fills the chip
+   with --deep, which is a shape change rather than a hue one. */
+.pane-focus:hover { color: var(--text); }
+.pane-focus[aria-pressed="true"] {
+  color: var(--text); background: var(--deep); border-radius: 4px;
+}
+.pane-focus:focus-visible { outline: 2px solid var(--rose); outline-offset: 1px; }
 
 #overall-pane { grid-area: overall; }
 #zoom-pane { grid-area: zoom; }
@@ -242,8 +259,8 @@ select {
   padding: 1px 4px;
   border: 1px solid var(--baseline);
   border-radius: 4px;
-  background: var(--surface-1);
-  color: var(--cream);
+  background: var(--plum);
+  color: var(--text);
   font: inherit;
   font-size: 11px;
 }
@@ -251,7 +268,7 @@ select {
 
 .pane {
   display: flex; flex-direction: column; min-height: 0; min-width: 0;
-  background: var(--surface-1);
+  background: var(--plum);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -275,7 +292,7 @@ select {
 .pane-head h2 {
   margin: 0; font-size: 12px; font-weight: 600;
   white-space: nowrap;
-  text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2);
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
 }
 /* status readouts are short and numeric; wrapping them mid-figure is worse
    than moving the whole label to the next row */
@@ -293,9 +310,9 @@ select {
   z-index: 2;
   padding: 6px 10px;
   font-size: 12px;
-  color: var(--accent);
-  background: var(--surface-1);
-  border-top: 1px solid var(--accent);
+  color: var(--alert);
+  background: var(--plum);
+  border-top: 1px solid var(--alert);
   overflow-wrap: anywhere;
 }
 .pane-error[hidden] { display: none; }
@@ -303,17 +320,17 @@ select {
   margin-left: 8px;
   padding: 1px 8px;
   font: inherit;
-  color: var(--accent);
+  color: var(--alert);
   background: transparent;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--alert);
   border-radius: 4px;
   cursor: pointer;
 }
 .pane-error-retry:hover { background: var(--select-fill); }
-.pane-error-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pane-error-retry:focus-visible { outline: 2px solid var(--rose); outline-offset: 1px; }
 
 /* legend chips — the byte-class secondary encoding */
-.legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--ink-2); }
+.legend { display: flex; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
 .legend .key { display: inline-flex; align-items: center; gap: 4px; }
 .legend .swatch {
   width: 10px; height: 10px; border-radius: 3px; display: inline-block;
@@ -323,9 +340,9 @@ select {
 .signal-picks { display: flex; gap: 6px; flex-wrap: wrap; }
 .signal-picks label {
   display: inline-flex; align-items: center; gap: 3px;
-  font-size: 11px; color: var(--ink-2); cursor: pointer;
+  font-size: 11px; color: var(--muted); cursor: pointer;
 }
-.toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-2); }
+.toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 
 /* ------------------------------------------------------------- panels */
 
@@ -336,11 +353,12 @@ select {
 /* Triage status colours. Reserved for state and never reused as a series
    colour, and each one ships with its own words next to it — the verdict
    is spelled out, findings carry a code and a description — so severity is
-   never carried by hue alone. Stepped against --panel like everything
-   else; critical is the accent, which RELEASE.md §3 assigns to every error
-   signal. */
+   never carried by hue alone. Stepped against --plum like everything else;
+   critical is --alert, which RELEASE.md §3 assigns to every error signal.
+   Warning and good keep their hues: they are state, not brand, and moving
+   them onto the plum ramp would make three severities one hue apart. */
 :root {
-  --status-critical: #ec5b38;   /* == --accent, by that rule */
+  --status-critical: var(--alert);   /* == --alert, by that rule */
   --status-warning: #d9a441;
   --status-good: #3fb27a;
 }
@@ -357,7 +375,7 @@ select {
   background: var(--grid);
 }
 .triage-verdict .v-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
-.triage-verdict .v-conf { color: var(--ink-2); font-size: 11px; margin-left: auto; }
+.triage-verdict .v-conf { color: var(--muted); font-size: 11px; margin-left: auto; }
 .triage-verdict.v-likely_packed,
 .triage-verdict.v-corrupt { background: color-mix(in srgb, var(--status-critical) 20%, transparent); }
 .triage-verdict.v-likely_benign_binary { background: color-mix(in srgb, var(--status-good) 18%, transparent); }
@@ -380,7 +398,7 @@ select {
 .finding-row .f-code {
   font: 11px ui-monospace, Consolas, monospace; font-weight: 600;
 }
-.finding-row .f-detail { color: var(--ink-2); }
+.finding-row .f-detail { color: var(--muted); }
 .finding-row .f-span {
   display: block; color: var(--muted); font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -388,7 +406,7 @@ select {
 #model-info table { border-collapse: collapse; width: 100%; }
 #model-info td { padding: 1px 6px 1px 0; vertical-align: top; }
 #model-info td:first-child { color: var(--muted); white-space: nowrap; }
-#model-info .warn { color: var(--accent); }
+#model-info .warn { color: var(--alert); }
 #model-info h3 {
   margin: 10px 0 4px; font-size: 11px; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--muted);
@@ -408,13 +426,13 @@ select {
 .finding-row:focus-visible,
 .region-row:focus-visible,
 .fn-row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--rose);
   outline-offset: -2px;
 }
 [role="listbox"]:focus { outline: none; }   /* focus lives on the rows */
 .region-row .rname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .region-row .rperms { color: var(--muted); width: 30px; }
-.region-row .rsize { color: var(--ink-2); }
+.region-row .rsize { color: var(--muted); }
 
 /* virtualised hex viewer (Phase 9) */
 .hexscroll { position: relative; }
@@ -423,18 +441,20 @@ select {
   position: absolute; left: 0; right: 0;
   padding: 0 10px;
   font: 12px ui-monospace, Consolas, monospace;
-  color: var(--ink-2);
+  color: var(--muted);
 }
 .hexrow { height: 18px; line-height: 18px; white-space: pre; }
-.hexrow .hl { background: var(--select-fill); color: var(--cream); }
+.hexrow .hl { background: var(--select-fill); color: var(--text); }
 .hexrow .caret { outline: 1px solid var(--select-edge); }
 .hexrow .addr { color: var(--muted); }
-.hexrow .ascii { color: var(--cream); }
+.hexrow .ascii { color: var(--text); }
 .hexrow .gr, .hexrow .gs {
   display: inline-block; overflow: hidden; vertical-align: bottom;
   color: var(--muted); font-size: 10px;
 }
-.hexrow .gr { width: 8ch; color: var(--accent); }
+/* the finding gutter. --alert, not --rose: it flags a finding on the row,
+   and --rose is 2.8:1 on the pane — unreadable at 10px. */
+.hexrow .gr { width: 8ch; color: var(--alert); }
 .hexrow .gs { width: 14ch; margin-right: 1ch; }
 
 /* image view stride suggester */
@@ -444,7 +464,7 @@ select {
 .offset-input {
   width: 76px; padding: 1px 4px;
   border: 1px solid var(--baseline); border-radius: 4px;
-  background: var(--surface-1); color: var(--cream);
+  background: var(--plum); color: var(--text);
   font: 11px ui-monospace, Consolas, monospace;
 }
 
@@ -463,7 +483,7 @@ select {
   font-size: 12px;
   border-bottom: 1px solid var(--border);
   background: var(--select-fill);
-  color: var(--cream);
+  color: var(--text);
 }
 .cfg-note { padding: 4px 10px; color: var(--muted); font-size: 11px; }
 .fn-row {
@@ -482,14 +502,14 @@ select {
 .fn-badge {
   padding: 0 4px; border-radius: 6px; font-size: 9px;
   text-transform: uppercase; letter-spacing: 0.03em;
-  background: var(--grid); color: var(--ink-2);
+  background: var(--grid); color: var(--muted);
 }
 /* ground-truth tiers stay quiet; guesses are flagged — the badge ink is
    the provenance encoding the PLAN requires (§5.8) */
 .fn-badge.b-symbol, .fn-badge.b-entry { opacity: 0.65; }
 .fn-badge.b-prologue, .fn-badge.b-gap_sweep, .fn-badge.b-incomplete {
   background: color-mix(in srgb, var(--status-warning) 26%, transparent);
-  color: var(--cream);
+  color: var(--text);
 }
 #cfg-search { width: 110px; }
 
@@ -501,14 +521,14 @@ select {
   max-width: 620px; padding: 24px; text-align: center;
 }
 .empty-intro h2 {
-  margin: 0 0 8px; font-size: 22px; letter-spacing: 0.04em; color: var(--cream);
+  margin: 0 0 8px; font-size: 22px; letter-spacing: 0.04em; color: var(--text);
 }
-.empty-intro p { margin: 0 0 10px; color: var(--ink-2); }
+.empty-intro p { margin: 0 0 10px; color: var(--muted); }
 .empty-intro p.muted { color: var(--muted); font-size: 12px; }
 .empty-intro button.primary {
   margin-top: 6px; padding: 6px 14px; font: inherit;
-  color: var(--ink); background: var(--accent);
-  border: 1px solid var(--accent); border-radius: 5px; cursor: pointer;
+  color: var(--text); background: var(--rose);
+  border: 1px solid var(--rose); border-radius: 5px; cursor: pointer;
 }
 .empty-samples-label { margin-top: 22px !important; }
 .empty-samples {
@@ -516,12 +536,12 @@ select {
 }
 .empty-samples .sample {
   padding: 3px 9px; font: inherit; font-size: 12px;
-  color: var(--ink-2); background: var(--surface-1);
+  color: var(--muted); background: var(--plum);
   border: 1px solid var(--baseline); border-radius: 4px; cursor: pointer;
 }
-.empty-samples .sample:hover { border-color: var(--accent); color: var(--accent); }
+.empty-samples .sample:hover { border-color: var(--rose); color: var(--text); }
 .empty-intro button:focus-visible, .empty-samples .sample:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px;
+  outline: 2px solid var(--rose); outline-offset: 2px;
 }
 #empty-state[hidden], #layout[hidden] { display: none; }
 
@@ -532,8 +552,8 @@ select {
   padding: 18px 22px 16px;
   border: 1px solid var(--baseline);
   border-radius: 10px;
-  background: var(--surface-1);
-  color: var(--cream);
+  background: var(--plum);
+  color: var(--text);
   font: inherit;
 }
 #help-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
@@ -549,36 +569,36 @@ select {
   gap: 3px 12px; align-items: baseline;
 }
 #help-dialog dt { display: flex; gap: 4px; align-items: baseline; }
-#help-dialog dd { margin: 0; color: var(--ink-2); }
+#help-dialog dd { margin: 0; color: var(--muted); }
 #help-dialog kbd {
   padding: 1px 6px; min-width: 20px; text-align: center;
   border: 1px solid var(--baseline); border-radius: 4px;
-  background: var(--page); color: var(--cream);
+  background: var(--ink); color: var(--text);
   font: 11px ui-monospace, Consolas, monospace;
 }
 #help-dialog .kbd-sep { color: var(--muted); }
 #help-dialog .help-close { margin-top: 16px; }
 #help-dialog .help-close:focus-visible,
 #help-btn:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px;
+  outline: 2px solid var(--rose); outline-offset: 1px;
 }
 
 #tooltip {
   position: fixed; z-index: 10; pointer-events: none;
-  background: var(--surface-1); color: var(--cream);
+  background: var(--plum); color: var(--text);
   border: 1px solid var(--baseline); border-radius: 6px;
   padding: 5px 8px; font-size: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   font-variant-numeric: tabular-nums;
   max-width: 340px;
 }
-#tooltip .t2 { color: var(--ink-2); }
+#tooltip .t2 { color: var(--muted); }
 
 body.dragover::after {
   content: "drop to open";
   position: fixed; inset: 0; z-index: 20;
   display: flex; align-items: center; justify-content: center;
-  background: var(--select-fill); color: var(--cream);
+  background: var(--select-fill); color: var(--text);
   font-size: 20px; border: 2px dashed var(--select-edge);
 }
 
@@ -594,21 +614,21 @@ body.dragover::after {
   position: fixed; inset: 0; z-index: 30;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
-  background: var(--bg);
-  color: var(--cream);
+  background: var(--ink);
+  color: var(--text);
   font-size: 14px; line-height: 1.5;
 }
 .login-screen[hidden] { display: none; }
 
 /* ---- boot splash: the mark draws itself the way Striate walks a file:
-   cream cap at offset 0, trace, sage cap at EOF. That semantic is
+   light cap at offset 0, trace, deep cap at EOF. That semantic is
    load-bearing per RELEASE.md §3 — do not recolour the caps. */
 
 .splash { display: none; }
 .login-screen.boot .splash {
   position: fixed; inset: 0; z-index: 10;
   display: grid; place-items: center;
-  background: var(--bg);
+  background: var(--ink);
 }
 .splash-inner { text-align: center; }
 .splash-mark { display: block; width: 88px; height: 88px; margin: 0 auto 22px; }
@@ -630,7 +650,7 @@ body.dragover::after {
   font-size: 17px; font-weight: 600;
   letter-spacing: 0.42em; text-indent: 0.42em;
   text-transform: uppercase;
-  color: var(--cream);
+  color: var(--text);
 }
 .login-screen.boot .splash-word {
   opacity: 0; animation: rise 520ms var(--settle) 820ms forwards;
@@ -640,13 +660,22 @@ body.dragover::after {
   to { opacity: 1; transform: none; }
 }
 
-/* progress in the tool's own units rather than as a bar */
+/* Progress in the tool's own units rather than as a bar. Full-strength
+   --muted, not a dimmed one: at 0.7 it fell to 4.5:1 on --ink and the
+   counter is the only thing on screen saying the boot is still running.
+   Size and tracking set it below the wordmark instead. */
 .splash-offset {
   margin: 12px 0 0;
   font-size: 10.5px; letter-spacing: 0.22em;
-  color: var(--sage); opacity: 0.7;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.login-screen.boot .splash-offset {
+  opacity: 0; animation: pop 320ms ease-out 240ms forwards;
+}
+/* set once the walk reaches EOF, so a cut-short boot does not leave the
+   counter mid-fade */
+.login-screen.boot .splash-offset.is-lit { opacity: 1; animation: none; }
 .splash.is-done { animation: splash-out 340ms ease-in forwards; }
 @keyframes splash-out { to { opacity: 0; transform: scale(1.045); } }
 
@@ -654,7 +683,7 @@ body.dragover::after {
 
 .login-card {
   width: 100%; max-width: 380px;
-  background: var(--panel);
+  background: var(--plum);
   border: 1px solid var(--hair);
   border-radius: 10px;
   overflow: hidden;
@@ -669,15 +698,20 @@ body.dragover::after {
   to { opacity: 1; transform: none; }
 }
 
-/* the section-entropy strip: the same readout drawn over a loaded binary */
+/* The section-entropy strip: the same readout drawn over a loaded binary.
+   Genuinely two-tone — low bars in --deep, high bars in --rose, split at a
+   0.60 threshold — rather than one ink at varying opacity, which is the
+   truer encoding and is what gives --deep real work to do. On a failed
+   sign-in the whole strip shifts up-hue instead of one colour flipping. */
 .entropy {
   display: block; width: 100%; height: 10px;
-  color: var(--sage);
   border-bottom: 1px solid var(--hair);
+  --strip-lo: var(--deep);
+  --strip-hi: var(--rose);
 }
-.login-card.is-error .entropy { color: var(--accent); }
+.login-card.is-error .entropy { --strip-lo: var(--rose); --strip-hi: var(--alert); }
 @media (prefers-reduced-motion: no-preference) {
-  .entropy { transition: color 180ms ease-out; }
+  .entropy rect { transition: fill 180ms ease-out; }
 }
 .login-screen.boot .entropy { clip-path: inset(0 100% 0 0); }
 .login-screen.boot .login-card.is-in .entropy {
@@ -696,13 +730,13 @@ body.dragover::after {
   font-size: 19px; font-weight: 600;
   letter-spacing: 0.32em; text-indent: 0.32em;
   text-transform: uppercase;
-  color: var(--cream);
+  color: var(--text);
 }
 .login-tagline {
   margin: 3px 0 0;
   font-size: 10.5px; letter-spacing: 0.17em;
   text-transform: uppercase;
-  color: var(--sage);
+  color: var(--muted);
 }
 
 /* ---- fields ----------------------------------------------------- */
@@ -712,12 +746,12 @@ body.dragover::after {
   display: block; margin-bottom: 7px;
   font-size: 10.5px; font-weight: 500;
   letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--sage);
+  color: var(--muted);
 }
 .login-field input {
   width: 100%; padding: 11px 13px;
   font: inherit; font-size: 15px;
-  color: var(--cream);
+  color: var(--text);
   background: var(--field);
   border: 1px solid var(--hair);
   border-radius: 5px;
@@ -728,13 +762,13 @@ body.dragover::after {
     transition: border-color 140ms ease-out, box-shadow 140ms ease-out;
   }
 }
-.login-field input::placeholder { color: rgba(168, 164, 146, 0.45); }
-.login-field input:hover { border-color: rgba(168, 164, 146, 0.4); }
+.login-field input::placeholder { color: rgba(201, 140, 168, 0.45); }
+.login-field input:hover { border-color: rgba(201, 140, 168, 0.45); }
 .login-field input:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(236, 91, 56, 0.24);
+  border-color: var(--rose);
+  box-shadow: 0 0 0 3px rgba(166, 77, 121, 0.30);
 }
-.login-field input[aria-invalid="true"] { border-color: var(--accent); }
+.login-field input[aria-invalid="true"] { border-color: var(--alert); }
 
 /* One line reserved whether or not there is a message, so the card never
    jumps under the pointer as you fail a sign-in. */
@@ -743,7 +777,7 @@ body.dragover::after {
   min-height: 18px;
   margin: -2px 0 16px;
   font-size: 12px; line-height: 1.45;
-  color: var(--accent);
+  color: var(--alert);
 }
 .login-error:empty { display: block; }
 .login-error::before { content: "!"; font-weight: 700; opacity: 0.85; }
@@ -753,31 +787,39 @@ body.dragover::after {
   width: 100%; padding: 12px;
   font: inherit; font-size: 12.5px; font-weight: 600;
   letter-spacing: 0.2em; text-indent: 0.2em; text-transform: uppercase;
-  color: var(--ink);
-  background: var(--accent);
-  border: 1px solid var(--accent);
+  color: var(--text);
+  background: var(--rose);
+  border: 1px solid var(--rose);
   border-radius: 5px;
   cursor: pointer; outline: none;
 }
 @media (prefers-reduced-motion: no-preference) {
-  #login-submit { transition: filter 140ms ease-out; }
+  #login-submit {
+    transition: box-shadow 140ms ease-out, background-color 140ms ease-out;
+  }
 }
-#login-submit:hover:not(:disabled) { filter: brightness(1.1); }
-#login-submit:active:not(:disabled) { filter: brightness(0.92); }
+/* Hover is a glow, not a brightening: lightening --rose pushes the label
+   to 3.89:1. The press darkens to --deep, which is 9.6:1. */
+#login-submit:hover:not(:disabled) { box-shadow: 0 0 0 3px rgba(166, 77, 121, 0.32); }
+#login-submit:active:not(:disabled) {
+  background: var(--deep); border-color: var(--deep);
+}
 #login-submit:disabled { opacity: 0.55; cursor: default; }
 #login-submit:focus-visible {
-  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--cream);
+  box-shadow: 0 0 0 2px var(--plum), 0 0 0 4px var(--text);
 }
 
+/* Not an error, so not --alert; and --rose cannot carry text on --plum.
+   It is a note, and --muted is what notes are set in. */
 .login-note {
   margin: 16px 0 0;
   font-size: 11px; line-height: 1.5;
-  color: var(--accent);
+  color: var(--muted);
 }
 .login-foot {
   margin: 22px 0 0;
   font-size: 10px; letter-spacing: 0.11em;
-  text-align: center; color: var(--sage); opacity: 0.66;
+  text-align: center; color: var(--muted);
 }
 
 @media (max-width: 400px) {

@@ -70,7 +70,12 @@ export const GRAY: Lut = (() => {
    One palette, not two. RELEASE.md §3 fixes Striate as dark-only, so the
    light theme and its second set of chart colours are gone; what is left
    is stepped against the one surface it will ever be drawn on
-   (`--panel` #453B3B).
+   (`--plum` #3B1C32).
+
+   The 2026 palette change moved that surface darker, which *raises* every
+   contrast figure below rather than lowering one, so slots 1–4 were left
+   exactly as validated. Only the two brand-tied anchors moved: null tracks
+   the panel and 0xff is the brand's lightest value.
 
    These were not chosen by eye. Every value below was generated at a
    target OKLCH lightness and hue, then run through the dataviz validator
@@ -101,7 +106,7 @@ export const BYTE_CLASS_NAMES = [
    target of 8.
 
    Slots 0 and 5 are deliberate extremes rather than categories: null
-   recedes toward the panel, 0xff is the brand cream. They fail the
+   recedes toward the panel, 0xff is the brand's lightest value. They fail the
    lightness band and the chroma floor on purpose — that is the encoding.
 
    The validator WARNs that whitespace and high sit under 3:1 against the
@@ -110,12 +115,12 @@ export const BYTE_CLASS_NAMES = [
    and mark-to-mark separation is what the CVD checks above measure. The
    legend carries the names either way. */
 export const BYTE_CLASS_COLORS: string[] = [
-  "#3a3130",   // null       recedes into the panel
+  "#33192b",   // null       recedes into the panel
   "#1e8fee",   // printable
   "#017634",   // whitespace
   "#d77800",   // control
   "#a4429e",   // high
-  "#fcf2e5",   // 0xff       the brand cream: the top of the range
+  "#f7eff4",   // 0xff       the brand's lightest value: the top of the range
 ];
 
 export function byteClassLut(): Lut {
@@ -151,9 +156,12 @@ export const SERIES: string[] = [
 ];
 
 // Brush-to-locate highlight ink as "r,g,b" for rgba() templating with a
-// density-driven alpha. The brand accent, which nothing else in a raster
-// uses, so it cannot be confused with the selection band it draws over.
-export const LOCATE_RGB = "236,91,56";      // --accent #EC5B38
+// density-driven alpha. --alert rather than --rose: --rose sits a few
+// degrees off the "high" byte class (#a4429e) and would be lost in a
+// raster full of it, and it is dark enough that a low-density overlay
+// would read as a smudge. Nothing else in a raster uses --alert, so it
+// cannot be confused with the selection band it draws over.
+export const LOCATE_RGB = "255,122,138";    // --alert #FF7A8A
 
 /* ---------------------------------------------------------- rendering */
 

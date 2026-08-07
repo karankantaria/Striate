@@ -42,7 +42,7 @@ test("byte-class LUT maps ids to the validated palette, saturating past 5", () =
 });
 
 /* RELEASE.md §3 fixes Striate as dark-only. A second palette creeping back
-   is how the app ends up with colours nobody validated against --panel. */
+   is how the app ends up with colours nobody validated against --plum. */
 test("there is one palette, not one per theme", () => {
   assert.ok(Array.isArray(BYTE_CLASS_COLORS), "BYTE_CLASS_COLORS is keyed by theme again");
   assert.ok(Array.isArray(SERIES), "SERIES is keyed by theme again");

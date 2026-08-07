@@ -159,7 +159,7 @@ jobs:
           python -m pip install --upgrade pip
           cat > /tmp/floors.txt <<'EOF'
           lief==1.0
-          capstone==5.0.1
+          capstone==5.0.2
           numpy==2.1
           fastapi==0.115
           uvicorn==0.30

@@ -214,7 +214,7 @@ export class PlotView {
     if (!this.model || this.x1 <= this.x0) return;
 
     const css = getComputedStyle(document.documentElement);
-    const ink2 = css.getPropertyValue("--ink-2").trim();
+    const ink2 = css.getPropertyValue("--text").trim();
     const muted = css.getPropertyValue("--muted").trim();
     const grid = css.getPropertyValue("--grid").trim();
     const selFill = css.getPropertyValue("--select-fill").trim();
@@ -354,7 +354,7 @@ export class PlotView {
       ctx.fillStyle = regionColor(r);
       ctx.fillRect(xa, 2, Math.max(xb - xa - 1, 1), RIBBON_H - 4);
       if (xb - xa > 46) {
-        ctx.fillStyle = css.getPropertyValue("--cream").trim();
+        ctx.fillStyle = css.getPropertyValue("--text").trim();
         ctx.font = "10px system-ui, sans-serif";
         ctx.fillText(r.name, xa + 3, RIBBON_H - 6, xb - xa - 6);
       }
@@ -400,15 +400,16 @@ export class PlotView {
   }
 }
 
-/* Region ribbon fills, stepped against --panel like everything else.
+/* Region ribbon fills, stepped against --plum like everything else.
    Alpha carries a second signal on purpose: executable reads strongest,
    writable next, read-only faintest, so the ribbon is legible as a shape
-   before any colour is resolved. Overlay is the accent because an overlay
-   is the finding an analyst is looking for. */
+   before any colour is resolved. Overlay is --alert because an overlay is
+   the finding an analyst is looking for, and --rose is the primary action
+   rather than a signal. */
 function regionColor(r: Region): string {
-  if (r.kind === "overlay") return "#ec5b3880";     // attention: the accent
-  if (r.kind === "gap") return "#a8a49240";         // sage, barely there
-  if (r.kind === "header") return "#a8a49266";
+  if (r.kind === "overlay") return "#ff7a8a80";     // attention: --alert
+  if (r.kind === "gap") return "#c98ca840";         // --muted, barely there
+  if (r.kind === "header") return "#c98ca866";
   if (r.perms.includes("x")) return "#2a97f780";    // exec
   if (r.perms.includes("w")) return "#25ae5660";    // data
   return "#2a97f740";                               // ro

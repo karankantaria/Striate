@@ -2,6 +2,7 @@
 
 import concurrent.futures
 import json
+import os
 import threading
 import time
 
@@ -71,12 +72,20 @@ def test_model_endpoint(hello, client):
 
 
 def test_signals_listing(hello, client):
-    _, sha = hello
+    # Sizes come from the file, never from a literal. `hello_O2` is a
+    # *generated* sample, and `corpus/build.py` is reproducible on a given
+    # toolchain but not across them: this used to assert `11008 // 256`,
+    # which held for a Windows-built corpus and failed on a Linux runner
+    # whose zig produced a different (and differently sized) binary. The
+    # invariant under test is windows == floor(size / stride); the byte
+    # count is incidental.
+    path, sha = hello
+    size = os.path.getsize(path)
     sigs = {s["name"]: s for s in
             client.get(f"/api/{sha}/signals").json()["signals"]}
     assert sigs["entropy_4096"]["ready"]
-    assert sigs["entropy_4096"]["windows"] == 2      # 11008 B at window 4096
-    assert sigs["entropy_256"]["windows"] == 11008 // 256
+    assert sigs["entropy_4096"]["windows"] == size // 4096
+    assert sigs["entropy_256"]["windows"] == size // 256
 
 
 def test_signal_wire_format_and_values(hello, client):
