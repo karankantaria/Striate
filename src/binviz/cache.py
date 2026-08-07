@@ -66,13 +66,23 @@ def default_root() -> Path:
 
 def params_fingerprint() -> str:
     """Hash of everything that changes analysis output besides the bytes."""
-    from .signals import SIGNALS
+    from .signals import SIGNALS, load_calibration
 
     doc = {
         "schema": SCHEMA,
         "tool_version": TOOL_VERSION,
         "signals": {n: SIGNALS[n][:2] for n in sorted(SIGNALS)},
         "trigram": {"dtype": TRIGRAM_DTYPE, "order": "count_desc"},
+        # The thresholds are an input to the analysis exactly like the window
+        # sizes above: `classify()` reads them, and the triage verdict is a
+        # cached artifact derived from them. Leaving them out meant re-running
+        # corpus/calibrate.py — or moving between a checkout and an install,
+        # which used to change the numbers by 0.8 bits — silently kept
+        # verdicts computed under the old thresholds. This is not a
+        # TOOL_VERSION bump (§6: that is the *analysis* version and it
+        # discards every cache on every install); it invalidates precisely
+        # the entries whose thresholds actually moved.
+        "calibration": load_calibration()["derived"],
     }
     blob = json.dumps(doc, sort_keys=True).encode()
     return hashlib.sha256(blob).hexdigest()[:16]

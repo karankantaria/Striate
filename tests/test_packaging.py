@@ -120,3 +120,94 @@ def test_the_spec_points_at_branding_that_exists():
     would leave them pointing at nothing and PyInstaller only complains
     about the icon at build time."""
     assert (ROOT / "packaging" / "icons" / "icon.ico").is_file()
+
+
+# ------------------------------------------------------- the macOS icon
+#
+# `icon.icns` is written by tools/make_icns.py rather than by `iconutil`,
+# which runs on macOS and nowhere else. That is only defensible if the
+# result is what `iconutil` would have produced, so the container is
+# checked here rather than trusted — the machine that would notice a
+# malformed one is the machine we do not have.
+
+ICNS = ROOT / "packaging" / "icons" / "icon.icns"
+
+#: What `iconutil -c icns` emits from a standard .iconset: five logical
+#: sizes, each at 1x and 2x. An icon missing its @2x halves is the one
+#: that looks soft on every Mac sold in the last decade.
+ICNS_ENTRIES = {
+    b"icp4": 16, b"ic11": 32, b"icp5": 32, b"ic12": 64,
+    b"ic07": 128, b"ic13": 256, b"ic08": 256, b"ic14": 512,
+    b"ic09": 512, b"ic10": 1024,
+}
+
+
+def _walk_icns(raw: bytes):
+    """(type, payload) pairs, asserting the container agrees with itself."""
+    import struct
+
+    assert raw[:4] == b"icns", "not an icns container"
+    declared = struct.unpack(">I", raw[4:8])[0]
+    assert declared == len(raw), f"header says {declared}, file is {len(raw)}"
+    out, off = [], 8
+    while off < len(raw):
+        code = raw[off:off + 4]
+        length = struct.unpack(">I", raw[off + 4:off + 8])[0]
+        assert 8 < length <= len(raw) - off, f"{code!r} length {length}"
+        out.append((code, raw[off + 8:off + length]))
+        off += length
+    assert off == len(raw), "trailing bytes after the last entry"
+    return out
+
+
+def test_the_macos_icon_exists():
+    """§3's inventory lists it; the spec's darwin branch reaches for it."""
+    assert ICNS.is_file(), "run python tools/make_icns.py"
+
+
+def test_the_icns_container_is_well_formed():
+    """A length that disagrees with the file is the failure mode of writing
+    this by hand, and Finder's response to it is to show a generic icon
+    with no diagnostic anywhere."""
+    entries = _walk_icns(ICNS.read_bytes())
+    assert [c for c, _ in entries] == list(ICNS_ENTRIES), \
+        "entry set or order differs from iconutil's"
+
+
+def test_every_icns_entry_is_a_png_of_the_size_its_code_promises():
+    """The type code *is* the size declaration — nothing in the entry
+    header repeats it, so a mismatched payload is undetectable until macOS
+    draws the wrong thing."""
+    import io
+
+    from PIL import Image
+
+    for code, payload in _walk_icns(ICNS.read_bytes()):
+        im = Image.open(io.BytesIO(payload))
+        assert im.format == "PNG", (code, im.format)
+        assert im.size == (ICNS_ENTRIES[code],) * 2, (code, im.size)
+        # flat colour on a rounded field: without alpha the corners are
+        # black squares on every dark Dock
+        assert im.mode == "RGBA", (code, im.mode)
+
+
+def test_the_icns_is_the_same_artwork_as_the_rest_of_the_branding():
+    """§3: `icon.svg` is the master and everything else is derived. The
+    1024px entry is the master re-encoded, not resampled, so any drift
+    between the two means someone edited one copy of the mark — the exact
+    failure §3 keeps a single canonical set to avoid."""
+    import io
+
+    from PIL import Image, ImageChops
+
+    master = Image.open(ROOT / "packaging" / "icons" / "icon-1024.png")
+    entries = dict(_walk_icns(ICNS.read_bytes()))
+    biggest = Image.open(io.BytesIO(entries[b"ic10"]))
+    diff = ImageChops.difference(master.convert("RGBA"), biggest.convert("RGBA"))
+    assert diff.getbbox() is None, \
+        "icon.icns and icon-1024.png are different images"
+
+
+def test_the_mac_bundle_uses_it():
+    code = _code(SPEC)
+    assert 'BUNDLE(' in code and '"icon.icns"' in code

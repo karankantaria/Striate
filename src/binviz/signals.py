@@ -83,7 +83,15 @@ def compute_signals(buf, names: list[str] | None = None,
 # ------------------------------------------------------------ calibration
 
 _FALLBACK_CAL = {
-    # conservative defaults, used only when calibration.json is absent
+    # Conservative defaults for a source checkout whose corpus has not been
+    # built yet. **Not a shipping mode** — plan §5.3's whole argument is
+    # that thresholds come from a checked-in calibration.json, and these
+    # numbers are the folklore it exists to replace (`code_h_lo` alone is
+    # 0.8 bits off the measured value). A wheel that landed here would give
+    # different verdicts from a checkout, which is why the file is staged
+    # into the package by tools/build_ui.py and asserted in the release
+    # workflow. `load_calibration()["source"]` says which one is in force,
+    # and /api/config reports it.
     "derived": {
         "random_h_min": 7.90, "random_chi2_max": 400.0,
         "packed_h_min": 7.20, "code_h_lo": 4.5, "code_h_hi": 7.0,
@@ -96,6 +104,14 @@ _cal_cache: dict | None = None
 
 
 def _find_calibration() -> str | None:
+    """The thresholds in force, most specific source first.
+
+    The packaged copy is deliberately **last**. It is staged at build time
+    from `corpus/calibration.json`, so in a checkout it is at best identical
+    to the repo copy and at worst stale — and a developer who has just re-run
+    `corpus/calibrate.py` must see the numbers they measured, not the ones
+    that were current when the package data was staged.
+    """
     env = os.environ.get("BINVIZ_CALIBRATION")
     if env and os.path.exists(env):
         return env
@@ -107,6 +123,12 @@ def _find_calibration() -> str | None:
     cwd = os.path.join(os.getcwd(), "corpus", "calibration.json")
     if os.path.exists(cwd):
         return cwd
+    # installed: staged into the package by tools/build_ui.py, because
+    # `corpus/` is not in the wheel and a pip install would otherwise run
+    # on _FALLBACK_CAL without ever saying so.
+    packaged = os.path.join(here, "calibration.json")
+    if os.path.exists(packaged):
+        return packaged
     return None
 
 

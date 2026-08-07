@@ -73,10 +73,13 @@ version = { attr = "binviz.__version__" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# The built frontend, staged into the package by tools/build_ui.py. Without
-# this the wheel would contain a backend and no UI at all (§4.1).
+# Generated data staged into the package by tools/build_ui.py, all of it
+# canonical somewhere else in the repo. Without the first two entries the
+# wheel contains a backend and no UI at all (§4.1); without the last it
+# contains an analyser running on hardcoded thresholds instead of the
+# measured ones (plan §5.3), which is quieter and worse.
 [tool.setuptools.package-data]
-binviz = ["webui/*", "webui/assets/*", "icons/*"]
+binviz = ["webui/*", "webui/assets/*", "icons/*", "calibration.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

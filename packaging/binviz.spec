@@ -194,10 +194,11 @@ coll = COLLECT(
     name="binviz",
 )
 
-# macOS only, and only once §5.2 has produced the .icns — `iconutil` runs
-# on a Mac and nowhere else, so this stays conditional rather than
-# assuming an asset that is not in the repo yet. Untested: RELEASE.md §8
-# records that everything here was verified on Windows.
+# macOS only. `icon.icns` is committed (derive it again with
+# tools/make_icns.py), but the `is_file()` check stays: a .app with a
+# generic icon is a cosmetic loss, and refusing to build over one would
+# not be. Untested — RELEASE.md §8 records that everything here was
+# verified on Windows.
 if sys.platform == "darwin":
     icns = ROOT / "packaging" / "icons" / "icon.icns"
     app = BUNDLE(

@@ -20,3 +20,8 @@ src/binviz/webui/
 # the window icon, staged from packaging/icons/ by the same tool. Copied
 # rather than committed so there is only one canonical set of branding.
 src/binviz/icons/
+
+# the measured thresholds, staged from corpus/calibration.json by the same
+# tool so an installed binviz does not fall back to hardcoded ones. Same
+# rule: corpus/calibrate.py owns the canonical copy.
+src/binviz/calibration.json

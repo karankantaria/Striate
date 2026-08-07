@@ -45,6 +45,19 @@ The app is the FastAPI service plus the built frontend in one process.
 | `binviz app` | The same thing in a native window (`pip install "binviz[app]"`). Falls back to your browser without pywebview. |
 | `binviz passwd` | Sets this install's sign-in credential, for `--auth local`. |
 
+**Two things besides the UI are staged into the package**, both canonical
+elsewhere in the repo and both copied rather than committed: the window
+icon (§3) and `corpus/calibration.json`. The second is not cosmetic —
+`corpus/` is not in the wheel, so without it an installed binviz falls
+back to the hardcoded thresholds in `signals._FALLBACK_CAL` and classifies
+windows differently from a checkout (`code_h_lo` 4.5 against the measured
+5.31), which is exactly the folklore plan §5.3 exists to refuse. The
+release workflow asserts the wheel contains it and that it is not itself
+the fallback; `/api/config` reports which source is in force; and the
+thresholds feed `cache.params_fingerprint()`, because they change analysis
+output and a stale verdict computed under old thresholds is the kind of
+wrong answer this tool must not give quietly.
+
 **Serving.** The packaged frontend is mounted after every `/api/*` route,
 with a catch-all returning `index.html` so client-side routes survive a hard
 refresh. `web/dist` lives outside the Python package, so
@@ -148,7 +161,8 @@ contradict what eyeballing suggests, learned doing it:
 | `packaging/icons/icon.ico` | Windows: PyInstaller `icon=`, **and the `binviz app` window icon** |
 | `packaging/icons/icon-256.png` | Linux/macOS window icon |
 | `packaging/icons/icon-512.png` | general purpose |
-| `packaging/icons/icon-1024.png` | input for macOS `.icns` (`iconutil`, on a Mac) |
+| `packaging/icons/icon-1024.png` | the raster master — every size below is derived from it |
+| `packaging/icons/icon.icns` | macOS `.app` bundle icon; `python tools/make_icns.py` re-derives it |
 | `packaging/icons/favicon.ico` | canonical favicon (16 + 32) |
 | `web/public/favicon.ico` | copy Vite serves at `/` and copies into `dist/` |
 
@@ -156,6 +170,23 @@ contradict what eyeballing suggests, learned doing it:
 `src/binviz/icons/` (gitignored) so a wheel has them. They are **copied, not
 committed**, because `packaging/icons/` is canonical and two copies of the
 branding in one repo is how they drift.
+
+`icon.icns` is **not** staged into the wheel: it is the `.app` bundle's
+icon and nothing else reads it. The wheel's non-Windows window icon is the
+PNG, because that is what GTK and Qt take.
+
+> **`.icns` did not need a Mac after all.** `iconutil` is a container
+> tool — the file is a header, a length, and a run of PNGs under
+> four-character type codes, and the scaling on the way in is an ordinary
+> Lanczos downsample. `tools/make_icns.py` writes the same ten entries
+> `iconutil -c icns` emits from a standard `.iconset`, downsampled from
+> the 1024px master rather than redrawn (a second copy of the mark at
+> 16px is exactly the drift this section exists to prevent). It can also
+> emit the `.iconset` itself, so a Mac owner can regenerate the file the
+> canonical way and compare. `tests/test_packaging.py` walks the
+> container and checks every entry is a PNG of the size its type code
+> promises — the machine that would notice a malformed one is the machine
+> we do not have.
 
 > **The window icon format is not cosmetic.** Handing the Windows backend a
 > PNG throws `System.ArgumentException` from inside .NET — an unhandled
@@ -202,11 +233,14 @@ branding in one repo is how they drift.
 
 Nothing here is a bug. In rough order:
 
-1. **macOS `.icns`** from `icon-1024.png` with `iconutil`, on a Mac. The
-   spec's darwin branch already looks for `packaging/icons/icon.icns` and
-   builds the `.app` without an icon when it is absent, so this is the only
-   thing between here and a branded macOS bundle.
-2. **First release** — see §7, which is owner-only.
+1. **First release** — see §7, which is owner-only.
+
+Done, and described in §3: the **macOS `.icns`** — written by
+`tools/make_icns.py` rather than by `iconutil`, so it did not need a Mac.
+Ten entries, five logical sizes at 1x and 2x, container walked and every
+payload checked by `tests/test_packaging.py`. What is still unverified is
+the last inch, and it is the same last inch as the rest of §8: nobody has
+seen it in a Dock.
 
 Done, and described in §2: the **PyInstaller spec** — `binviz.spec` +
 `launcher.py` in `packaging/`, README instructions, and
@@ -239,6 +273,10 @@ through, which no import analysis can see.
   *analysis* version and feeds the cache fingerprint — bumping it discards
   every cached analysis on every install, so a UI-only release must not
   touch it. They read the same today. Keep them separate.
+  The calibration thresholds now feed that fingerprint too, which is the
+  finer-grained version of the same idea: re-running `corpus/calibrate.py`
+  invalidates the analyses whose thresholds actually moved, without
+  claiming the analysis code changed.
 - **`README.md` says "Phase 3 complete"** while `HANDOVER.md` says Phase 12.
   Project status is your call, but it is the first thing a visitor to a
   public repo reads.
@@ -269,10 +307,40 @@ assert the wheel contains the UI + licence), `floors` (run the suite against
 the *oldest* version every dependency range allows), and `publish`, which
 needs both and only fires on a published release.
 
-> **The workflow has never actually run.** It is written and locally
-> rehearsed — the wheel check and the floor resolution were both executed by
-> hand — but no CI run has happened, so treat the first `workflow_dispatch`
-> as part of the release, not as a formality.
+> **The workflow has never actually run.** No CI run has happened, so
+> treat the first `workflow_dispatch` as part of the release, not as a
+> formality.
+
+It has now been rehearsed step by step on Windows, and **it would have
+failed on its first run.** Three gaps, all fixed in the workflow:
+
+- **No corpus.** `corpus/out/` is generated and gitignored, so a fresh
+  checkout has no samples, and `tests/conftest.py` *fails* rather than
+  skips on a missing required one — 17 of the 20 are required. Verified by
+  hiding `corpus/out/` and running the suite: **168 failed, 40 errors.**
+  Both jobs now build the corpus after installing (it needs `zig cc` from
+  the `ziglang` dev dependency). `upx` turns out to be preinstalled on the
+  Ubuntu runner image, at 4.x rather than the 5.2.0 `manifest.json`
+  records — provenance, not a checksum, and every `hello_upx` assertion is
+  a range or a verdict.
+- **The frontend suite never ran.** 87 tests, including the enforcement
+  half of §4's conventions (one `innerHTML`, every pane reachable). The
+  build job now runs `npm run test` before building.
+- **Node 22 → 24.** `npm run test` is `node --test test/*.test.ts`, which
+  needs TypeScript type stripping; 24 is what those 87 tests are green on.
+
+What the rehearsal *did* confirm, unchanged: `npm ci` agrees with the
+lockfile; `tools/build_ui.py --skip-build` stages 6 files; `python -m
+build` produces both distributions; the wheel check passes verbatim (45
+files, 4 UI assets, licence present); and every floor pin in the `floors`
+job has a cp311 linux-x86_64 wheel on PyPI — asked of the index directly,
+because pip's `--platform` emulation gives false conflicts on legacy
+manylinux aliases.
+
+Still unrehearsable locally, and therefore still first-run risk: the
+`floors` job's *suite* (needs Python 3.11 on Linux), whether upx 4.x packs
+the zig-built sample as cleanly as 5.2.0, and the `publish` job — OIDC
+against PyPI cannot be exercised anywhere but CI.
 
 Exact versions the suite is green against live in `constraints-dev.txt`:
 
@@ -329,7 +397,8 @@ packaging/
   icons/                canonical branding (§3)
   binviz.spec           PyInstaller spec: onedir desktop build (§2)
   launcher.py           its entry point — the CLI, defaulting to `app`
-tools/build_ui.py       stages web/dist + icons into the package
+tools/build_ui.py       stages web/dist + icons + calibration into the package
+tools/make_icns.py      derives packaging/icons/icon.icns from the master
 web/
   design/login.html     login screen design reference
   src/                  frontend (views/, canvas/, workers/, api.ts, …)

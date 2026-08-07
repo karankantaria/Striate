@@ -695,11 +695,19 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
         so a UI that listed "." would 403 whenever the two differ. It also
         gives the desktop file dialog somewhere sensible to open.
         """
+        from .signals import load_calibration
+
         return {
             "root": app.state.file_root,          # null when unconfined
             "max_upload": app.state.max_upload,
             "tool_version": TOOL_VERSION,
             "auth_mode": app.state.auth_mode,
+            # Which thresholds the verdicts were computed with. Reported
+            # because the failure this closes was invisible: a wheel with no
+            # staged calibration analysed with hardcoded fallbacks and looked
+            # exactly like one that did not. "fallback-defaults" here means
+            # the numbers plan §5.3 argues against are in force.
+            "calibration": load_calibration().get("source"),
         }
 
     @app.get("/api/files")

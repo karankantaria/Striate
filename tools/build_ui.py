@@ -19,6 +19,13 @@ Also stages the window icon for `binviz app` (RELEASE.md §2). It is copied
 rather than committed to `src/binviz/icons/` because `packaging/icons/` is
 the canonical branding and two copies in one repo is precisely what
 RELEASE.md warns against.
+
+And `corpus/calibration.json`, for the same reason and with more at stake:
+`corpus/` is not in the wheel, so an installed binviz used to fall back to
+the hardcoded defaults in `signals._FALLBACK_CAL` — quietly classifying
+windows differently from a checkout, which is the exact folklore plan §5.3
+exists to refuse. Canonical copy stays in `corpus/`, written by
+`corpus/calibrate.py`; this one is generated and gitignored.
 """
 
 from __future__ import annotations
@@ -35,6 +42,8 @@ DIST = WEB / "dist"
 TARGET = ROOT / "src" / "binviz" / "webui"
 ICON_SRC = ROOT / "packaging" / "icons"
 ICON_TARGET = ROOT / "src" / "binviz" / "icons"
+CAL_SRC = ROOT / "corpus" / "calibration.json"
+CAL_TARGET = ROOT / "src" / "binviz" / "calibration.json"
 #: What the desktop window needs, one per platform: Windows' backend goes
 #: through System.Drawing.Icon and accepts nothing but .ico, GTK and Qt take
 #: the PNG. Not the whole icon set — the 1024px master and the other sizes
@@ -87,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
                     ignore=shutil.ignore_patterns(*ignores) if ignores else None)
 
     staged_icons = _stage_icons()
+    if not _stage_calibration():
+        return 1
 
     files = sorted(p for p in TARGET.rglob("*") if p.is_file())
     total = sum(p.stat().st_size for p in files)
@@ -98,7 +109,30 @@ def main(argv: list[str] | None = None) -> int:
     if staged_icons:
         print(f"binviz: staged {len(staged_icons)} icon(s) -> "
               f"{ICON_TARGET.relative_to(ROOT)}")
+    print(f"binviz: staged {CAL_TARGET.relative_to(ROOT)}")
     return 0
+
+
+def _stage_calibration() -> bool:
+    """Copy the measured thresholds into the package. Fatal when missing,
+    unlike the icons: a wheel without branding looks plainer, a wheel
+    without calibration *analyses differently* and says nothing about it.
+
+    `corpus/calibration.json` is tracked, so the only way to reach this
+    message is to have deleted it — in which case building a wheel is the
+    wrong next step anyway.
+    """
+    if not CAL_SRC.is_file():
+        # the full path, not one relative to ROOT: an error handler that
+        # raises ValueError of its own explains nothing
+        print(f"binviz: no {CAL_SRC} — a wheel built now "
+              f"would fall back to hardcoded thresholds and classify "
+              f"windows differently from this checkout.\n"
+              f"  Run `python corpus/calibrate.py` (needs a built corpus).",
+              file=sys.stderr)
+        return False
+    shutil.copy2(CAL_SRC, CAL_TARGET)
+    return True
 
 
 def _stage_icons() -> list[Path]:

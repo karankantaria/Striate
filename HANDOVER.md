@@ -372,6 +372,21 @@ collapses to the diagonal on arrival); warm next/prev paint 126 ms
 14. P9's image view intentionally does NOT follow the shared
     `SelectionStore.dtype` — pixel formats (rgb8, bayer…) are a different
     axis than element dtypes; the mode picker is its own control.
+15. **An installed binviz used to analyse with different thresholds than a
+    checkout.** `corpus/` is not in the wheel and `_find_calibration()`
+    only knew repo layouts, so `pip install binviz` silently landed on
+    `signals._FALLBACK_CAL` — `code_h_lo` 4.5 against the measured 5.31,
+    i.e. plan §5.3's folklore back in force in the artifact RELEASE.md §1
+    calls canonical. Found by rehearsing the release workflow, not by any
+    test, because every test runs in a checkout where the repo copy is
+    found. `tools/build_ui.py` now stages `corpus/calibration.json` into
+    the package the same way it stages the UI, the release gate asserts
+    the wheel contains it, `/api/config` reports which source is in force,
+    and the thresholds feed `params_fingerprint()` — they change analysis
+    output, so they belong in the hash that decides whether a cached
+    analysis is still valid. **That last part invalidates every existing
+    cache once** (`d4480e63…` → `62b4fd7b…`); the first open after
+    upgrading re-analyses, and there is nothing to do about it.
 
 ## What Phase 12 built (scale hardening — measured triggers only)
 

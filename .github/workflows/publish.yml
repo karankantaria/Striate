@@ -40,7 +40,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          # 24, not 22: `npm run test` is `node --test test/*.test.ts`, which
+          # needs the TypeScript type stripping that only recent Node enables
+          # by default — and 24 is what the frontend suite is actually green
+          # on. Pinning the major here rather than tracking latest.
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -51,16 +55,39 @@ jobs:
       - name: build and stage the frontend
         run: |
           npm ci --prefix web
+          # 87 tests, and several of them are the enforcement half of the
+          # conventions in RELEASE.md §4 — that `innerHTML` appears in one
+          # place, that every pane is reachable from some workspace. A rule
+          # whose test never runs in the release gate is a comment.
+          npm run --prefix web test
           npm run --prefix web build
           python tools/build_ui.py --skip-build
 
-      - name: run the test suite
+      - name: install
         run: |
           python -m pip install --upgrade pip
           # [app] too: the js_api bridge tests (§2.4) skip without
           # pywebview, and a minimal-surface rule nobody checks is not a rule
           pip install -e ".[dev,app]" -c constraints-dev.txt
-          python -m pytest -q
+
+      # `corpus/out/` is generated output and gitignored, so a fresh checkout
+      # has no samples — and `tests/conftest.py` *fails* rather than skips on
+      # a missing required sample (17 of the 20 are required), by design:
+      # silently skipping most of the suite is how a green tick stops meaning
+      # anything. Without this step the run reports 168 failures + 40 errors.
+      #
+      # Needs `zig cc` (the ziglang dev dependency, hence after the install
+      # above) and upx, which is preinstalled on the Ubuntu runner image.
+      # That is upx 4.x, while `corpus/manifest.json` records the sample was
+      # packed with 5.2.0 — provenance, not a checksum: every assertion about
+      # hello_upx is a range or a verdict, never an exact size or hash.
+      - name: build the ground-truth corpus
+        run: |
+          upx --version | head -1
+          python corpus/build.py
+
+      - name: run the test suite
+        run: python -m pytest -q
 
       - name: build the distributions
         run: |
@@ -86,8 +113,22 @@ jobs:
           assert assets, "webui/assets is empty; index.html would 404 its own JS"
           licences = [n for n in names if n.endswith("/LICENSE")]
           assert licences, "no LICENSE in the wheel metadata (§4.3)"
+          # `corpus/` is not in the wheel, so without the staged copy the
+          # analyser silently falls back to hardcoded thresholds and
+          # classifies windows differently from a checkout — plan §5.3 is
+          # explicit that thresholds come from a checked-in calibration.
+          cal = "binviz/calibration.json"
+          if cal not in names:
+              print(f"{wheels[0].name} has no {cal}: this wheel would "
+                    f"analyse with fallback thresholds", file=sys.stderr)
+              sys.exit(1)
+          import json
+          source = json.loads(zipfile.ZipFile(wheels[0]).read(cal))["source"]
+          assert source != "fallback-defaults", \
+              "the staged calibration is itself the fallback"
           print(f"{wheels[0].name}: {len(names)} files, "
-                f"{len(assets)} UI assets, licence present")
+                f"{len(assets)} UI assets, licence present, "
+                f"calibration from {source}")
           PY
 
       - uses: actions/upload-artifact@v4
@@ -110,7 +151,7 @@ jobs:
           python-version: "3.11"      # requires-python's own floor
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"          # same reason as the build job
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: install at the declared minimums
@@ -132,6 +173,11 @@ jobs:
           npm ci --prefix web
           npm run --prefix web build
           python tools/build_ui.py --skip-build
+      # Same reason as the build job: no corpus, no suite. The samples
+      # themselves do not depend on the floor versions — they are compiled
+      # by zig and packed by upx — but the code that parses them does.
+      - name: build the ground-truth corpus
+        run: python corpus/build.py
       - run: python -m pytest -q
 
   publish:

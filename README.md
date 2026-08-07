@@ -131,6 +131,10 @@ The staging step is not optional. `web/dist` lives outside the Python
 package, so skipping it produces an app whose window opens on a JSON 404;
 the spec refuses to build rather than let that happen quietly.
 
+On macOS the same command also produces `dist/Striate.app`, branded from
+`packaging/icons/icon.icns`. Neither has been run on a Mac — see
+RELEASE.md §8.
+
 `--root` still defaults to the working directory, so a double-clicked
 executable is confined to the folder it starts in — which is usually the
 app's own folder. Set the shortcut's "Start in", or launch it with
