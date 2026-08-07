@@ -2,23 +2,38 @@
 
 Binary visualiser & triage tool: linked interactive views (entropy, histograms,
 image/dot-plot surfaces, control-flow graphs) over a single shared
-address-space model. Static analysis only. See `PLAN.md` for the full design.
+address-space model.
 
-## Status
+## What it does
 
-Phase 3 complete.
+Open a file and every view is looking at the same address space. Select a range
+in one and the rest follow — the point is to answer "what is this region" by
+looking at it several ways at once.
 
-- **P0** project skeleton, ground-truth corpus, `binviz probe`
-- **P1** address-space model (`binviz model`) — regions, symbols, off↔va
-  mapping, gap/overlay materialisation, raw fallback for malformed input
-- **P2** element stream + statistics core (`binviz signal`, `binviz hist`) —
-  dtype reinterpretation incl. packed 12-bit, quantisation with recorded
-  method, windowed entropy, n-grams (sparse trigram), named signals, and
-  corpus-calibrated window classification
-- **P3** surface engine (`binviz surface`, `binviz stride`) — one
-  `(range, dtype, params, w, h) -> raster` protocol behind six views:
-  linear/byte-class, Hilbert, image (packed formats + 24 Bayer modes),
-  bigram, sparse trigram, and dot plot (exact + progressive sampled)
+- **Map it.** `binviz model` parses ELF/PE/Mach-O through LIEF into regions,
+  symbols and an offset↔virtual-address mapping, materialising gaps and
+  overlays. Malformed input falls back to a raw model rather than failing.
+- **Find the parts worth looking at.** Windowed entropy and other named
+  signals, byte-class and Hilbert surfaces, and window classification against
+  thresholds *measured* from a ground-truth corpus rather than picked
+  (`PLAN.md` §5.3). Packed, encrypted, code and padding do not look alike.
+- **Identify an encoding.** Bigram and sparse-trigram histograms, a dot plot
+  for repeats and self-similarity, and an image view over 15 packed pixel
+  formats and 24 Bayer modes — with a stride suggester, because the wrong row
+  stride turns a photograph into diagonal noise and you conclude there is no
+  photograph.
+- **Read the code.** Capstone decode by linear sweep and recursive descent
+  (differentially tested against objdump), a five-tier function-discovery
+  cascade including jump tables, and control-flow graphs laid out in a worker
+  — with the uncertainty of a recovered boundary drawn rather than hidden.
+- **Get a verdict.** `binviz triage` says what the file looks like and why;
+  in the UI each finding clicks through to the bytes it was derived from.
+
+The UI is five workspaces — Overview, Bytes, Patterns, Code, and All — over the
+same selection. Static analysis only: samples are parsed, never executed.
+
+`PLAN.md` is the design; `HANDOVER.md` is the phase-by-phase history and the
+gotchas list; `RELEASE.md` covers shipping, branding and known limitations.
 
 ## Quickstart
 
@@ -48,6 +63,14 @@ binviz surface corpus/out/hello_static --name hilbert -p mode=byteclass --png h.
 binviz surface corpus/out/rgb_raw.bin  --name image -p mode=rgb8 -p width=320 --png i.png
 binviz surface corpus/out/repeats.bin  --name dotplot -p mode=exact --png d.png
 binviz stride  corpus/out/bayer_raw.bin --mode bayer_RGGB_RGB_12
+
+# code
+binviz disasm    corpus/out/hello_O2 --limit 20
+binviz functions corpus/out/hello_static --sort size
+binviz cfg       corpus/out/hello_O2 --func main --dot main.dot
+
+# the verdict, and why
+binviz triage corpus/out/hello_upx
 ```
 
 ## Running the server

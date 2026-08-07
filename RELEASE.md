@@ -8,8 +8,8 @@ Companions: `HANDOVER.md` is the engineering history and the gotchas list;
 `SECURITY.md` is the public-facing posture and disclosure route; `PLAN.md` is
 the analysis design (`§5.x` references in code point there).
 
-Last updated **2026-08-06**, after the security/UI work order was completed
-and retired.
+Last updated **2026-08-07**, when the last open questions in §6 were decided.
+The security/UI work order was completed and retired the day before.
 
 ---
 
@@ -254,32 +254,48 @@ through, which no import analysis can see.
 
 ---
 
-## 6. Open questions — decisions for the owner
+## 6. Settled decisions
 
-- **`lief>=1.0,<1.1` is deliberately tight.** lief's API moves fast and it is
-  the component whose failure mode is a *plausible but wrong parse* rather
-  than an exception, and nothing else in a normal environment depends on it,
-  so the resolution cost of a narrow range is near zero. The price is that
-  lief 1.1 will require a binviz release even if it is compatible. Keep, or
-  widen to `<2` and rely on the parser tests?
-- **`--auth local` has a claim window.** If no credential exists, the first
-  sign-in becomes the account — the startup banner warns in four lines of
-  `!!`, and `binviz passwd` closes it ahead of time. The alternative was
-  refusing to start without a credential, which locks out a desktop user who
-  only ever double-clicks an icon. Current behaviour was chosen
-  deliberately; revisit if the shared-machine case becomes the common one.
-- **Two version numbers, on purpose.** `binviz.__version__` is the
-  distribution version (pyproject reads it). `cache.TOOL_VERSION` is the
-  *analysis* version and feeds the cache fingerprint — bumping it discards
-  every cached analysis on every install, so a UI-only release must not
-  touch it. They read the same today. Keep them separate.
-  The calibration thresholds now feed that fingerprint too, which is the
-  finer-grained version of the same idea: re-running `corpus/calibrate.py`
-  invalidates the analyses whose thresholds actually moved, without
-  claiming the analysis code changed.
-- **`README.md` says "Phase 3 complete"** while `HANDOVER.md` says Phase 12.
-  Project status is your call, but it is the first thing a visitor to a
-  public repo reads.
+These were the open questions at the end of the work order. All four were
+decided **2026-08-07**, before the first release. They are recorded here with
+the reasoning rather than deleted, because each one is a thing a later
+maintainer will reach for and should have to argue *against*, not rediscover.
+
+- **`lief>=1.0,<1.1` stays tight.** *Decided: keep.* lief's API moves fast and
+  it is the component whose failure mode is a *plausible but wrong parse*
+  rather than an exception — the one class of error this tool must not make
+  quietly. Nothing else in a normal environment depends on lief, so the
+  resolution cost of a narrow range is near zero. The known price: **lief 1.1
+  will require a binviz release even if it turns out to be compatible.** That
+  is the cheap direction to be wrong in. The parser tests are a check on the
+  pin, not a substitute for it — they run against whatever is installed, so
+  they cannot vouch for a version nobody has run them on. To widen it later,
+  widen to `<2` only after running the suite against 1.1 itself.
+- **`--auth local` keeps its claim window.** *Decided: keep.* If no credential
+  exists, the first sign-in becomes the account. The startup banner warns in
+  four lines of `!!`, and `binviz passwd` closes the window ahead of time. The
+  alternative — refusing to start without a credential — locks out the desktop
+  user who only ever double-clicks an icon, which is the majority case for
+  `binviz app`. Note the scope: the claim window is a `--auth local` concern
+  only, and `local` is opt-in for shared machines. Revisit if the
+  shared-machine case ever becomes the common one; the trigger is that, not a
+  general unease about first-run trust.
+- **Two version numbers stay separate.** *Decided: keep.*
+  `binviz.__version__` is the distribution version (pyproject reads it).
+  `cache.TOOL_VERSION` is the *analysis* version and feeds the cache
+  fingerprint — bumping it discards every cached analysis on every install, so
+  a UI-only release must not touch it. They read the same today, which is
+  what makes collapsing them look free; it is not, and the next
+  frontend-only patch is where you would find out. The calibration thresholds
+  now feed that fingerprint too — the finer-grained version of the same idea:
+  re-running `corpus/calibrate.py` invalidates the analyses whose thresholds
+  actually moved, without claiming the analysis code changed.
+- **`README.md`'s status section.** *Decided: done.* It said "Phase 3
+  complete" with a P0–P3 bullet list while `HANDOVER.md` said Phase 12. It is
+  now a feature summary with no phase numbering at all — phase numbers are
+  internal vocabulary and go stale by construction, and the first screen of a
+  public repo should say what the tool does. `HANDOVER.md` keeps the phase
+  history, which is where a maintainer looks for it and a visitor does not.
 
 ---
 
