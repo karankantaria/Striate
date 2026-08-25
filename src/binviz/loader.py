@@ -51,8 +51,31 @@ class MappedFile:
         return memoryview(self._mmap)
 
     def close(self) -> None:
+        """Release the mapping. Never raises because a view is still live.
+
+        `mmap.close()` raises `BufferError: cannot close exported pointers
+        exist` while any memoryview into it survives, and on the *failure*
+        path one always does: the traceback pins the frame that holds
+        `mf.view`. Raising from `__exit__` then replaces the original
+        exception with an opaque one about buffers. Observed as
+        `binviz signal f --name entropy` reporting a BufferError instead of
+        the KeyError that names the signals which do exist — the error was
+        destroyed by the cleanup it triggered. Teardown must not eat the
+        exception that caused it.
+
+        Dropping the reference is a complete substitute for closing, not a
+        leak: the mapping is unmapped when the last exporter is freed, which
+        is what that exporter's lifetime was already deciding. The file
+        object is closed either way — mmap holds its own duplicate of the
+        descriptor, so the mapping stays valid afterwards on Windows as well
+        as POSIX.
+        """
         if self._mmap is not None:
-            self._mmap.close()
+            try:
+                self._mmap.close()
+            except BufferError:
+                # A live view outlives us; let it own the mapping's end.
+                pass
             self._mmap = None
         if self._file is not None:
             self._file.close()  # type: ignore[attr-defined]
