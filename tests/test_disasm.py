@@ -170,6 +170,36 @@ def _divergence_report(divergent, ours, odlines, code, va, limit=6) -> str:
     return "\n".join(lines)
 
 
+def _folded_fwait(divergent, ours, oracle, code, va):
+    """Divergences that are objdump's FWAIT convention, not a decode error.
+
+    `9b` is an instruction in its own right (`fwait`). binutils folds it
+    into the x87 instruction that follows — `9b d9 ee` prints as a single
+    three-byte `fldz` — while capstone decodes the two instructions the
+    bytes actually encode. Both readings are correct and neither disputes
+    a byte; only the grouping differs. Note the direction this can fail
+    in: we mark an *extra* valid start, never miss one, so a folded FWAIT
+    can only ever show up as ours-only.
+
+    Recognised narrowly, because a blanket tolerance here would forgive a
+    real resynchronisation bug. Every clause is load-bearing: the previous
+    address must be a one-byte `wait` that *both* decoders start an
+    instruction at, and the address itself must be one only we start.
+    objdump prints a bare `fwait` whenever the next byte is not an x87
+    escape — 25 of the 28 in hello_static — and those already agree, which
+    is what keeps this from matching anything it should not.
+    """
+    benign = set()
+    for addr in divergent:
+        prev = addr - 1
+        insn = ours.get(prev)
+        if (addr in ours and addr not in oracle and prev in oracle
+                and insn is not None and insn.size == 1
+                and insn.mnemonic == "wait" and code[prev - va] == 0x9B):
+            benign.add(addr)
+    return benign
+
+
 @pytest.mark.parametrize("name", ["hello_O2", "hello_static"])
 def test_differential_objdump(name, manifest):
     objdump = _find_objdump()
@@ -186,6 +216,9 @@ def test_differential_objdump(name, manifest):
     # undecodable byte, which would change the very result under test.
     ours = linear_sweep(code, va, "x86_64")
     divergent = set(ours) ^ oracle
+    # objdump's FWAIT folding is a rendering convention, not a decode
+    # difference; drop those sites and hold the rest to exact agreement.
+    divergent -= _folded_fwait(divergent, ours, oracle, code, va)
     assert not divergent, (
         f"{len(divergent)} of {len(oracle)} instruction starts differ: "
         f"{len(set(ours) - oracle)} ours-only, "
