@@ -34,16 +34,18 @@ same selection. Static analysis only: samples are parsed, never executed.
 
 ## Screenshots
 
-
 ![Overview workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/overview.png)
+
 ![Bytes workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/bytes.png)
+
 ![Patterns workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/patterns.png)
+
 ![Code workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/code.png)
 
--->
+### Plates
 
-No UI screenshots yet. The plates below are real CLI output, drawn by the same
-renderers the UI uses, and regenerate with `python docs/make_plates.py`.
+Rendered by the same code the UI draws with, straight from the CLI —
+regenerate with `python docs/make_plates.py`.
 
 | A static binary | The same program, UPX-packed |
 |---|---|

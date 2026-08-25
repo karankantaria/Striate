@@ -1,14 +1,13 @@
 # Screenshots
 
-Empty on purpose — the images are not in the repo yet. `README.md` has the
-`![...]` lines ready, commented out; add a file here and uncomment its line.
+The four images `README.md` embeds. Replacing one is a drop-in: keep the
+filename and the README needs no edit.
 
-Those lines point at `raw.githubusercontent.com/.../main/docs/screenshots/`
-rather than at a relative path, because PyPI renders the README with no
-repository context and a relative `src` is a broken image there. The cost is
-that a screenshot only appears once it is **pushed to `main`** — locally and
-in a pull request it stays a broken link, which is expected rather than a
-mistake.
+They are referenced by absolute `raw.githubusercontent.com` URLs rather than
+relative paths, because PyPI renders the README with no repository context and
+a relative `src` is a broken image there. Two consequences: a new screenshot
+only appears once it is **pushed to `main`**, and immediately after a repo is
+made public the CDN can still serve a cached 404 for a few minutes.
 
 ## Settings
 
@@ -24,7 +23,7 @@ mistake.
 
 ## The shots
 
-| File | Workspace | What it needs to show |
+| File | Workspace | What it should show |
 |---|---|---|
 | `overview.png` | Overview | The address-space map with a region selected, and the triage verdict beside it. |
 | `bytes.png` | Bytes | Entropy over a packed binary, with the selection linked to the byte-class surface. |
@@ -34,3 +33,6 @@ mistake.
 Optional, if the linked-selection idea is not already obvious: a short GIF of
 selecting a range in one view and the others following. Name it `linked.gif`
 and keep it under 5 MB.
+
+Current set is ~5.6 MB total. Worth watching: these live in the repository
+rather than in a release asset, so every clone pays for them.
