@@ -77,6 +77,25 @@ else:
     print("binviz.spec: no staged icons; the window will use the default "
           "icon (run tools/build_ui.py to stage them)")
 
+# Staged by the same tool, and fatal for the same reason the frontend is.
+# `corpus/` is not collected, so without this the frozen app resolves no
+# calibration and silently falls back to `_FALLBACK_CAL` — `code_h_lo` 4.5
+# against the measured 5.31 — classifying windows differently from the
+# wheel while claiming to be the same program. Worse, it is *masked* in
+# the obvious test: `_find_calibration()` checks `$CWD/corpus/` before the
+# packaged copy, so a bundle launched from the repo root finds the real
+# thresholds and looks correct. Double-clicked from anywhere else, it does
+# not. The thresholds also feed `params_fingerprint()`, so the two builds
+# would disagree about which cached analyses are still valid.
+if not (PKG / "calibration.json").is_file():
+    raise SystemExit(
+        "binviz.spec: no staged calibration at src/binviz/calibration.json.\n"
+        "  Run `python tools/build_ui.py` first — freezing without it "
+        "builds an app that analyses on fallback thresholds, and it says "
+        "so nowhere."
+    )
+datas.append((str(PKG / "calibration.json"), "binviz"))
+
 # MIT, and the app is being redistributed as a binary — ship the text next
 # to the executable rather than only inside the wheel metadata (§4.3).
 if (ROOT / "LICENSE").is_file():

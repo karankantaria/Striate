@@ -83,6 +83,24 @@ def test_the_frozen_app_ships_the_ui_and_refuses_to_build_without_it():
         "a freeze with no staged frontend must fail loudly, not ship broken"
 
 
+def test_the_frozen_app_ships_its_calibration():
+    """The wheel's calibration bug (§5), one build system over. `corpus/`
+    is not collected, so without an explicit datas entry the frozen app
+    resolves no calibration and falls back to `_FALLBACK_CAL` — analysing
+    on `code_h_lo` 4.5 against the measured 5.31, and disagreeing with a
+    pip-installed binviz about the same file.
+
+    It is asserted here because the obvious manual test cannot see it:
+    `_find_calibration()` checks `$CWD/corpus/` before the packaged copy,
+    so a bundle launched from the repo root picks up the real thresholds
+    and looks fine. Only a launch from somewhere else exposes it, and that
+    is the double-click case.
+    """
+    code = _code(SPEC)
+    assert '"calibration.json"' in code,         "the frozen app would analyse on fallback thresholds (RELEASE.md §5)"
+    assert "raise SystemExit(" in code and 'PKG / "calibration.json"' in code,         "a freeze with no staged calibration must fail loudly, not ship wrong"
+
+
 def test_the_native_dependencies_are_collected():
     """Neither survives static import analysis: capstone ships a DLL beside
     its wrapper, lief resolves lief.PE/lief.ELF at runtime, and uvicorn
