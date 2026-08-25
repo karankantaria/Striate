@@ -9,7 +9,7 @@
      cap lands at EOF, the wordmark rises, the splash wipes to the card. The
      offset readout ticks on the same easing curve as the stroke, so the
      number and the trace reach the end together. That semantic (--text =
-     offset 0, --deep = EOF) is load-bearing per RELEASE.md §3; do not
+     offset 0, --deep = EOF) is load-bearing per ARCHITECTURE.md §3; do not
      recolour the caps.
    - `.boot` is set only when JS runs **and** `prefers-reduced-motion` is
      not set. Everything animated is scoped to it, so without it the page

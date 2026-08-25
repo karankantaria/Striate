@@ -802,7 +802,8 @@ def test_ui_does_not_require_a_token(tmp_path):
 
 
 def test_unknown_paths_fall_back_to_index(ui_client):
-    """Client-side routing (/login, RELEASE.md §2) must survive a refresh."""
+    """Client-side routing (/login, ARCHITECTURE.md §2) must survive a
+    refresh."""
     r = ui_client.get("/login")
     assert r.status_code == 200
     assert "<title>binviz</title>" in r.text

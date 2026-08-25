@@ -5,6 +5,25 @@ tool, it is the entire job — a malware triage tool where analysing malware
 compromises the analyst is the worst failure mode available. This document
 records the threat model, what is hardened today, and what is not yet.
 
+## What is done, at a glance
+
+Each line links to the reasoning; **`README.md` has the same list without it.**
+
+| | Control |
+|---|---|
+| Execution | **Samples are parsed, never executed.** There is no sandbox because nothing is run. |
+| Hostile input | [Parsing degrades rather than fails](#hardened-against-a-hostile-binary); mappings clamped to EOF; disassembly bounded at 1M instructions with a visited set; cache ids validated as 64 hex chars; large files streamed. |
+| Callers | [Every `/api` route requires a token](#the-api-authenticates-every-caller), minted at startup and injected into the page. The login form is not the boundary; the token is. |
+| Origins | [`Host` allowlist](#the-server-checks-which-name-it-was-reached-by) and [CORS granted only to the origin that needs it](#cors-grants-only-the-origin-that-needs-it). |
+| Filesystem | [Confined to `--root`](#file-access-is-confined-to-a-chosen-root), default the working directory. |
+| Resources | [Upload size, cache size, raster dimensions and analysis concurrency are all bounded](#requests-are-bounded-and-validated). |
+| Injection | [Binary metadata cannot become script](#binary-metadata-cannot-become-script) — one escaper, plus a CSP. |
+| Desktop | [No `--no-auth` on `binviz app`](#the-desktop-window); the `js_api` bridge exposes exactly one method, enforced by a test. |
+| Credentials | `--auth local` stores an scrypt digest at mode `0600`. No plaintext password is kept. |
+
+What is *not* done is in [Not yet done](#not-yet-done), and the deliberate
+limitations are in `ARCHITECTURE.md` §5. Neither list is empty, on purpose.
+
 ## Reporting a vulnerability
 
 Please report privately rather than opening a public issue. Use GitHub's
@@ -73,7 +92,7 @@ should be made carefully.
 - **Large files are streamed, not buffered.** Uploads hash to disk as they
   arrive and analysis works in bounded chunks, so a file larger than RAM is a
   slow operation rather than an out-of-memory crash. (Measured against a
-  2 GiB sample; see `HANDOVER.md`.)
+  2 GiB sample on a 16 GB machine.)
 
 ## Hardened against a hostile browser
 
@@ -226,4 +245,4 @@ section name do".
 
 Every finding from the review that produced this document is closed. What
 remains is hardening that has not been reviewed rather than known holes; the
-known limitations are listed in `RELEASE.md` §8.
+known limitations are listed in `ARCHITECTURE.md` §5.

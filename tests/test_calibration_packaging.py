@@ -3,9 +3,10 @@
 Plan §5.3 refuses "entropy > 7.0 means packed" and replaces it with
 thresholds derived from a checked-in `corpus/calibration.json`. But
 `corpus/` is not in the wheel, and `signals._find_calibration()` only knew
-about repo layouts — so a `pipx install binviz`, the artifact RELEASE.md §1
-calls canonical, ran on `_FALLBACK_CAL` instead. Silently: nothing in the
-API, the CLI or the logs said which numbers were in force, and the gaps are
+about repo layouts — so a `pipx install binviz`, the artifact
+ARCHITECTURE.md §1 calls canonical, ran on `_FALLBACK_CAL` instead.
+Silently: nothing in the API, the CLI or the logs said which numbers were
+in force, and the gaps are
 not rounding (`code_h_lo` 5.31 measured against 4.5 hardcoded, 0.8 bits).
 
 So the installed product classified windows differently from the checkout

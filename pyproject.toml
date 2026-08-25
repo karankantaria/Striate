@@ -7,8 +7,43 @@ build-backend = "setuptools.build_meta"
 name = "binviz"
 description = "Binary visualiser & triage tool: linked interactive views over a shared address-space model"
 requires-python = ">=3.11"
+# Without this the PyPI page is the metadata table and nothing else — the
+# summary line, then blank where the description should be. It is the first
+# thing anyone deciding whether to `pip install` a binary-analysis tool
+# reads, so it is the README rather than a shorter blurb written twice.
+readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+
+# Trove classifiers are the only structured facts PyPI can filter on, so
+# they are the difference between being found by someone searching for a
+# reverse-engineering tool and being found by someone who already knows the
+# name. "Static analysis only" is not expressible here; the README says it.
+#
+# No `License ::` classifier: PEP 639 superseded it with the SPDX `license`
+# expression above, and setuptools >= 77 *fails the build* if both are
+# present rather than warning. Adding it back breaks packaging.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Disassemblers",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: System :: Monitoring",
+]
+keywords = [
+    "binary", "visualisation", "reverse-engineering", "entropy",
+    "disassembly", "triage", "malware-analysis", "hilbert", "elf", "pe",
+    "mach-o", "control-flow-graph",
+]
 # One source of truth, in src/binviz/__init__.py. It used to be declared
 # here *and* there, and the two had already drifted apart (0.0.1 vs 0.0.3).
 dynamic = ["version"]
@@ -49,7 +84,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# `binviz app`, the native desktop window (RELEASE.md §2). An extra rather
+# `binviz app`, the native desktop window (ARCHITECTURE.md §2). An extra rather
 # than a runtime dependency so the base install stays lean — pywebview pulls
 # a GUI toolkit binding on Linux, and most installs only ever want the
 # server. Without it `binviz app` opens the default browser instead.

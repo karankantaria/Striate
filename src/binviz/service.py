@@ -706,7 +706,7 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
             # because the failure this closes was invisible: a wheel with no
             # staged calibration analysed with hardcoded fallbacks and looked
             # exactly like one that did not. "fallback-defaults" here means
-            # the numbers plan §5.3 argues against are in force.
+            # the numbers ARCHITECTURE.md §2.1 argues against are in force.
             "calibration": load_calibration().get("source"),
         }
 
@@ -965,8 +965,10 @@ def create_app(cache_root: str | os.PathLike | None = None, *,
         # it. An exception propagating through MappedFile.__exit__ keeps the
         # render frame alive via its traceback, and that frame still holds
         # numpy views of the mmap — so close() raises BufferError on Windows
-        # and buries the real error (HANDOVER.md gotcha 7). Catching here
-        # drops the traceback before the file is unmapped.
+        # and buries the real error. `MappedFile.close()` now tolerates
+        # that rather than raising, so the exception survives either way;
+        # catching here still drops the traceback before the file is
+        # unmapped, which is the tidier of the two orders.
         param_error: str | None = None
         with MappedFile.open(path) as mf:
             req = SurfaceRequest(start, end, w, h, dtype, params) \

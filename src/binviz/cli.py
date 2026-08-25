@@ -230,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_app(args) -> int:
-    """Open the desktop window (RELEASE.md §2, work order §2.4).
+    """Open the desktop window (ARCHITECTURE.md §2, work order §2.4).
 
     Same server, same token, same confinement as `binviz serve` — the only
     difference is what displays it. Everything security-relevant about that

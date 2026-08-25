@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-"""Derive `packaging/icons/icon.icns` from the 1024px master (RELEASE.md §3).
+"""Derive `packaging/icons/icon.icns` from the 1024px master
+(ARCHITECTURE.md §3).
 
     python tools/make_icns.py
 

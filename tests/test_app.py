@@ -140,7 +140,7 @@ def test_the_desktop_build_cannot_disable_authentication():
 
 def test_app_falls_back_to_a_browser_without_pywebview(monkeypatch, tmp_path,
                                                        capsys):
-    """RELEASE.md §2: pywebview is an optional extra, so the base install
+    """ARCHITECTURE.md §2: pywebview is an optional extra, so the base install
     must still be able to open the app."""
     opened = []
     monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))

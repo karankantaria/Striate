@@ -1,7 +1,7 @@
 """Phase 12 scale hardening — regression tests at test-friendly scale.
 
 Every fix here was entered with a measured number on a 2 GiB mixed file
-(16 GB machine), recorded in HANDOVER.md:
+(16 GB machine):
 
 - histogram(): whole-array bincount casts u8 -> int64 internally, 8x the
   input (measured 16.75 GiB commit). Now chunked; tested via tracemalloc.

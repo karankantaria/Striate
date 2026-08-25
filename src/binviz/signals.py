@@ -84,8 +84,9 @@ def compute_signals(buf, names: list[str] | None = None,
 
 _FALLBACK_CAL = {
     # Conservative defaults for a source checkout whose corpus has not been
-    # built yet. **Not a shipping mode** — plan §5.3's whole argument is
-    # that thresholds come from a checked-in calibration.json, and these
+    # built yet. **Not a shipping mode** — ARCHITECTURE.md §2.1's whole
+    # argument is that thresholds come from a checked-in calibration.json,
+    # and these
     # numbers are the folklore it exists to replace (`code_h_lo` alone is
     # 0.8 bits off the measured value). A wheel that landed here would give
     # different verdicts from a checkout, which is why the file is staged

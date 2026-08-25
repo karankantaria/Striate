@@ -1,4 +1,4 @@
-"""The PyInstaller spec (RELEASE.md §5.1).
+"""The PyInstaller spec (ARCHITECTURE.md §2).
 
 Nothing here builds anything — PyInstaller is not a test dependency and a
 99 MB freeze does not belong in a suite that runs on every change. What
@@ -34,7 +34,8 @@ def test_the_spec_exists():
     """§1 promises you can build the desktop app yourself, and §5.1 is that
     promise's only moving part: no spec, no build, and the promise is a
     paragraph in a README."""
-    assert SPEC.is_file(), "packaging/binviz.spec is missing (RELEASE.md §5.1)"
+    assert SPEC.is_file(), (
+        "packaging/binviz.spec is missing (ARCHITECTURE.md §2)")
 
 
 def test_the_build_is_onedir():
@@ -97,8 +98,11 @@ def test_the_frozen_app_ships_its_calibration():
     is the double-click case.
     """
     code = _code(SPEC)
-    assert '"calibration.json"' in code,         "the frozen app would analyse on fallback thresholds (RELEASE.md §5)"
-    assert "raise SystemExit(" in code and 'PKG / "calibration.json"' in code,         "a freeze with no staged calibration must fail loudly, not ship wrong"
+    assert '"calibration.json"' in code, (
+        "the frozen app would analyse on fallback thresholds "
+        "(ARCHITECTURE.md §2)")
+    assert "raise SystemExit(" in code and 'PKG / "calibration.json"' in code, (
+        "a freeze with no staged calibration must fail loudly, not ship wrong")
 
 
 def test_the_native_dependencies_are_collected():

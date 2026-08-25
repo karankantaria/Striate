@@ -15,17 +15,17 @@ Run before building a wheel:
 The staged directories are generated output and are gitignored; they are
 rebuilt from `web/` and `packaging/` whenever this runs.
 
-Also stages the window icon for `binviz app` (RELEASE.md §2). It is copied
+Also stages the window icon for `binviz app` (ARCHITECTURE.md §2). It is copied
 rather than committed to `src/binviz/icons/` because `packaging/icons/` is
 the canonical branding and two copies in one repo is precisely what
-RELEASE.md warns against.
+ARCHITECTURE.md warns against.
 
 And `corpus/calibration.json`, for the same reason and with more at stake:
 `corpus/` is not in the wheel, so an installed binviz used to fall back to
 the hardcoded defaults in `signals._FALLBACK_CAL` — quietly classifying
-windows differently from a checkout, which is the exact folklore plan §5.3
-exists to refuse. Canonical copy stays in `corpus/`, written by
-`corpus/calibrate.py`; this one is generated and gitignored.
+windows differently from a checkout, which is the exact folklore
+ARCHITECTURE.md §2.1 exists to refuse. Canonical copy stays in `corpus/`,
+written by `corpus/calibrate.py`; this one is generated and gitignored.
 """
 
 from __future__ import annotations

@@ -1,11 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the binviz desktop app (RELEASE.md §5.1).
+"""PyInstaller spec for the binviz desktop app (ARCHITECTURE.md §2).
 
     pip install pyinstaller
     python tools/build_ui.py            # MUST run first — see below
     pyinstaller packaging/binviz.spec   # -> dist/binviz/
 
-This is **not** the release artifact. RELEASE.md §1 is explicit: releases
+This is **not** the release artifact. ARCHITECTURE.md §1 is explicit: releases
 ship a wheel, because an unsigned frozen Python executable that bundles
 capstone and lief and exists to dissect packed binaries is the exact
 profile SmartScreen and AV heuristics false-positive on. This spec is the
@@ -216,7 +216,7 @@ coll = COLLECT(
 # macOS only. `icon.icns` is committed (derive it again with
 # tools/make_icns.py), but the `is_file()` check stays: a .app with a
 # generic icon is a cosmetic loss, and refusing to build over one would
-# not be. Untested — RELEASE.md §8 records that everything here was
+# not be. Untested — ARCHITECTURE.md §5 records that everything here was
 # verified on Windows.
 if sys.platform == "darwin":
     icns = ROOT / "packaging" / "icons" / "icon.icns"

@@ -56,7 +56,7 @@ jobs:
         run: |
           npm ci --prefix web
           # 87 tests, and several of them are the enforcement half of the
-          # conventions in RELEASE.md §4 — that `innerHTML` appears in one
+          # conventions in ARCHITECTURE.md §4 — that `innerHTML` appears in one
           # place, that every pane is reachable from some workspace. A rule
           # whose test never runs in the release gate is a comment.
           npm run --prefix web test
@@ -115,8 +115,9 @@ jobs:
           assert licences, "no LICENSE in the wheel metadata (§4.3)"
           # `corpus/` is not in the wheel, so without the staged copy the
           # analyser silently falls back to hardcoded thresholds and
-          # classifies windows differently from a checkout — plan §5.3 is
-          # explicit that thresholds come from a checked-in calibration.
+          # classifies windows differently from a checkout —
+          # ARCHITECTURE.md §2.1 is explicit that thresholds come from a
+          # checked-in calibration.
           cal = "binviz/calibration.json"
           if cal not in names:
               print(f"{wheels[0].name} has no {cal}: this wheel would "

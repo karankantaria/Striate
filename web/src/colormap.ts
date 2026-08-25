@@ -67,7 +67,7 @@ export const GRAY: Lut = (() => {
 
 /* ------------------------------------------------------- byte classes
 
-   One palette, not two. RELEASE.md §3 fixes Striate as dark-only, so the
+   One palette, not two. ARCHITECTURE.md §3 fixes Striate as dark-only, so the
    light theme and its second set of chart colours are gone; what is left
    is stepped against the one surface it will ever be drawn on
    (`--ink` #1A1A1D).

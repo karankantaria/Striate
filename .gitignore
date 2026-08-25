@@ -10,7 +10,7 @@ node_modules/
 corpus/out/
 corpus/tools/
 
-# local Claude Code session state (worktrees would commit as broken gitlinks)
+# local editor/agent session state (worktrees would commit as broken gitlinks)
 .claude/
 
 # the built frontend, staged into the package by tools/build_ui.py before a
@@ -25,3 +25,6 @@ src/binviz/icons/
 # tool so an installed binviz does not fall back to hardcoded ones. Same
 # rule: corpus/calibrate.py owns the canonical copy.
 src/binviz/calibration.json
+
+# stray output from the README quickstart examples
+out.png

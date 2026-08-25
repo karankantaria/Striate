@@ -16,7 +16,7 @@ looking at it several ways at once.
 - **Find the parts worth looking at.** Windowed entropy and other named
   signals, byte-class and Hilbert surfaces, and window classification against
   thresholds *measured* from a ground-truth corpus rather than picked
-  (`PLAN.md` §5.3). Packed, encrypted, code and padding do not look alike.
+  (ARCHITECTURE.md §2.1). Packed, encrypted, code and padding do not look alike.
 - **Identify an encoding.** Bigram and sparse-trigram histograms, a dot plot
   for repeats and self-similarity, and an image view over 15 packed pixel
   formats and 24 Bayer modes — with a stride suggester, because the wrong row
@@ -32,8 +32,44 @@ looking at it several ways at once.
 The UI is five workspaces — Overview, Bytes, Patterns, Code, and All — over the
 same selection. Static analysis only: samples are parsed, never executed.
 
-`PLAN.md` is the design; `HANDOVER.md` is the phase-by-phase history and the
-gotchas list; `RELEASE.md` covers shipping, branding and known limitations.
+## Screenshots
+
+<!-- UI SCREENSHOTS GO HERE.
+
+     Capture 1600x1000 or wider with a real sample open; corpus/out/hello_upx
+     is the most legible subject, because the packed region reads as noise
+     next to the unpacked stub. Save into docs/screenshots/ using the names
+     below, then delete the comment markers around the lines that follow.
+     docs/screenshots/README.md has the full shot list and settings.
+
+![Overview workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/overview.png)
+![Bytes workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/bytes.png)
+![Patterns workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/patterns.png)
+![Code workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/code.png)
+
+-->
+
+No UI screenshots yet. The plates below are real CLI output, drawn by the same
+renderers the UI uses, and regenerate with `python docs/make_plates.py`.
+
+| A static binary | The same program, UPX-packed |
+|---|---|
+| ![Hilbert byte-class, static](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/hilbert_byteclass_static.png) | ![Hilbert byte-class, packed](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/hilbert_byteclass_upx.png) |
+| Code, strings and padding separate into visible territories. | Structure collapses into uniform noise — the signature of packing. |
+| ![Entropy, static](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/entropy_hello_static.png) | ![Entropy, packed](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/entropy_hello_upx.png) |
+| Windowed entropy stays banded and low. | Flat and high, right up to the unpacking stub. |
+
+| Right row stride | Wrong row stride |
+|---|---|
+| ![RGB bars, correct stride](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/image_rgb_bars.png) | ![RGB bars, wrong stride](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/image_rgb_bars_wrong_stride.png) |
+
+Same bytes, one number different. That is why the stride suggester exists: the
+wrong row stride turns a photograph into diagonal noise, and you conclude there
+is no photograph.
+
+`ARCHITECTURE.md` is how it is put together: what ships, the branding every
+surface inherits, the conventions a new screen must follow, and the
+limitations that are deliberate. `SECURITY.md` is the security posture.
 
 ## Quickstart
 
@@ -47,7 +83,7 @@ python -m venv .venv
 # needs UPX on PATH, in $UPX, or unzipped into corpus/tools/upx-*/)
 make -C corpus                            # or: python corpus/build.py
 
-# thresholds are measured, never hardcoded (see plan §5.3)
+# thresholds are measured, never hardcoded (see ARCHITECTURE.md §2.1)
 python corpus/calibrate.py                # writes corpus/calibration.json
 
 pytest                                    # functional suite
@@ -156,12 +192,23 @@ the spec refuses to build rather than let that happen quietly.
 
 On macOS the same command also produces `dist/Striate.app`, branded from
 `packaging/icons/icon.icns`. Neither has been run on a Mac — see
-RELEASE.md §8.
+ARCHITECTURE.md §5.
 
 `--root` still defaults to the working directory, so a double-clicked
 executable is confined to the folder it starts in — which is usually the
 app's own folder. Set the shortcut's "Start in", or launch it with
 `--root DIR`.
+
+**A double-clicked executable asks for a credential.** With no arguments the
+frozen build runs `binviz app --auth local`, which is the one difference from
+the wheel's own default of no sign-in screen. The two answer different
+questions: `binviz app` typed into a terminal is already a deliberate act by
+whoever owns the session, while a double-click establishes nothing — it is the
+only launch path with no terminal, no typed command and no confinement
+decision behind it. Asking for the credential is how the window says out loud
+what the terminal would have said. Run `binviz passwd` first to set one, or
+pass `--auth none` explicitly to skip it; anything you supply on the command
+line still wins.
 
 ### Signing in
 
@@ -181,18 +228,69 @@ If you skip `binviz passwd`, the first sign-in claims the install — the
 startup banner warns about that, because whoever reaches the port first
 becomes the account.
 
+A double-clicked frozen executable turns `--auth local` on for itself; see
+[Building a standalone app](#building-a-standalone-app) for why that default
+differs from the wheel's.
+
 The login screen is **not** the security boundary; the token check on every
 `/api` route is. Anything on the machine can skip the form and call the API
 directly, which is exactly why the token exists. See `SECURITY.md`.
 
+## Security
+
+binviz opens files an attacker chose — that is the job, not an edge case, and
+a triage tool where analysing malware compromises the analyst is the worst
+failure available. **Samples are parsed, never executed.** What is done about
+the rest:
+
+**Against a hostile binary**
+
+- Parsing **degrades rather than fails**: a binary LIEF cannot make sense of
+  falls back to a raw model, so the malformed sample you most want to look at
+  is still inspectable.
+- **Every mapping is clamped to EOF**, and whatever got trimmed is reported in
+  the model's warnings rather than silently corrected.
+- **Disassembly cannot loop forever** — the sweep caps at 1M instructions and
+  carries a visited set, so a jump-to-self terminates structurally rather than
+  by timeout. Jump-table recovery caps at 256 entries.
+- **Cache paths cannot be traversed**: the `id` in every `/api/{id}/…` route
+  must be exactly 64 hex characters before it is used to build a path.
+- **Large files stream rather than buffer**, so a file bigger than RAM is slow
+  rather than an out-of-memory crash.
+
+**Against a hostile browser** — the threat "it only listens on localhost" does
+not address, because a page in another tab reaches `127.0.0.1` like any other
+origin:
+
+- **Every `/api` route requires a token.** It is minted at startup and injected
+  into the page, so nothing is pasted by hand and no route is left open.
+- **The login screen is not the security boundary** — the token check is. The
+  form can be skipped; the token cannot.
+- **File access is confined to `--root`**, which defaults to the working
+  directory. Paths outside it are refused.
+- **`Host` allowlist and narrow CORS**, so the origin that needs access is the
+  only one that gets it.
+- **Binary metadata cannot become script**: strings lifted from a sample —
+  section names, symbols — go through one escaper, backed by a CSP.
+- **Requests are bounded and validated** — upload size, cache size, raster
+  dimensions and analysis concurrency all have ceilings (see
+  [Limits](#limits)).
+
+**The desktop window** does not remove the network listener, it only makes it
+easier to forget. So there is no `--no-auth` on `binviz app`, and the `js_api`
+bridge exposes exactly one method — `pick_file()`, which takes no arguments and
+returns a path through the same `--root` confinement. A test fails if a second
+method ever appears.
+
+Credentials for `--auth local` are scrypt digests written mode `0600`; binviz
+stores no plaintext password.
+
+**`SECURITY.md` has the threat model, the reasoning behind each control, what
+is deliberately not done yet, and how to report a vulnerability privately.**
+
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
-
-Plates live in `docs/plates/` — regenerate with `python docs/make_plates.py`.
-Start with `image_rgb_bars.png` next to `image_rgb_bars_wrong_stride.png`
-(why the stride suggester exists), and `hilbert_byteclass_static.png` next to
-`hilbert_byteclass_upx.png` (structure versus packed noise).
+MIT — see [LICENSE](https://github.com/karankantaria/Striate/blob/main/LICENSE).
 
 The corpus cross-compiles ELF samples with `zig cc`, so no Linux toolchain is
 needed on Windows/macOS — samples are parsed, never executed.

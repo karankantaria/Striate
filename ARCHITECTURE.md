@@ -1,15 +1,14 @@
-# Striate — release, branding, and what is left
+# Striate — architecture and conventions
 
-Handoff document: how Striate ships, the conventions any new screen must
-follow, and the work that has not been done. Written so a fresh session can
-pick up without re-deriving the reasoning.
+How Striate is put together: what ships and why, the branding every surface
+inherits, the conventions any new screen must follow, and the limitations that
+are deliberate rather than unfinished.
 
-Companions: `HANDOVER.md` is the engineering history and the gotchas list;
-`SECURITY.md` is the public-facing posture and disclosure route; `PLAN.md` is
-the analysis design (`§5.x` references in code point there).
+`SECURITY.md` is the security posture — what is done to protect the tool and
+its users, and how to report a problem. `README.md` is the starting point.
 
-Last updated **2026-08-07**, when the last open questions in §6 were decided.
-The security/UI work order was completed and retired the day before.
+`§` references in code comments point here; the appendix at the end decodes
+the ones that outlived the work order they came from.
 
 ---
 
@@ -19,8 +18,9 @@ The security/UI work order was completed and retired the day before.
 with `pipx install binviz` (or pip):
 
 - Console entry point (`binviz = binviz.cli:main`), src layout, published
-  dependency **ranges** (see §6 — this used to say "pinned", and pinning was
-  wrong for a published distribution).
+  dependency **ranges**, not pins — the reasoning is in `pyproject.toml`
+  beside the ranges themselves, which is where anyone tempted to tighten
+  them will be standing.
 - Every runtime dependency (lief, capstone, numpy, fastapi, uvicorn, pillow)
   ships prebuilt wheels for Windows/macOS/Linux — one artifact serves all
   platforms, no code signing, no antivirus friction.
@@ -51,7 +51,7 @@ icon (§3) and `corpus/calibration.json`. The second is not cosmetic —
 `corpus/` is not in the wheel, so without it an installed binviz falls
 back to the hardcoded thresholds in `signals._FALLBACK_CAL` and classifies
 windows differently from a checkout (`code_h_lo` 4.5 against the measured
-5.31), which is exactly the folklore plan §5.3 exists to refuse. The
+5.31), which is exactly the folklore §2.1 below exists to refuse. The
 release workflow asserts the wheel contains it and that it is not itself
 the fallback; `/api/config` reports which source is in force; and the
 thresholds feed `cache.params_fingerprint()`, because they change analysis
@@ -72,17 +72,22 @@ packaging/binviz.spec` → `dist/binviz/` (~100 MB, numpy and lief). The
 entry point is `packaging/launcher.py`, which is the wheel's CLI with one
 addition — **no argv means `app --auth local`**, because a double-clicked
 executable passes none and bare `binviz` exits 2 into a console that closes
-instantly. The `--auth local` half of that default is the §2.4 argument
-applied to the one launch path with no terminal behind it: `binviz app`
-typed into a shell is a deliberate act and keeps the parser's own
-`--auth none`, but a double-click establishes nothing, so the window asks
-for the credential rather than signing you in invisibly. An explicit
-`--auth none` on the command line still wins. onedir, `upx=False` and
-`console=True` are all argued in the
-spec's docstring and pinned by `tests/test_packaging.py`; the short
-version is that each safe value costs something, so drift has a
-direction. The spec **refuses to build** without a staged frontend — the
-§4.1 failure again, and locally there is no release workflow to catch it.
+instantly.
+
+The `--auth local` half of that default applies the desktop-packaging rule
+below — keep the token, keep the bridge minimal — to the one launch path
+with no terminal behind it. `binviz app` typed into a shell is a deliberate
+act by whoever owns the session and keeps the parser's own `--auth none`; a
+double-click establishes nothing, so the window asks for the credential
+rather than signing you in invisibly. An explicit `--auth none` on the
+command line still wins.
+
+onedir, `upx=False` and `console=True` are each argued in the spec's
+docstring and pinned by `tests/test_packaging.py`; the short version is that
+every safe value costs something, so drift has a direction. The spec
+**refuses to build** without a staged frontend: that is the same failure as
+a wheel shipping no UI, and a local build has no release workflow to catch
+it.
 
 **Authentication.** Every `/api` route requires a token. How the browser
 *gets* it is the only thing that varies:
@@ -110,6 +115,33 @@ failure is the design working, not a test to update.
 `/code`, `/all`, `/login`), which works because both the packaged mount and
 Vite fall through to `index.html`. The URL is the state — no localStorage
 copy — so Back and deep links behave.
+
+### 2.1 Thresholds are measured, not chosen
+
+Every threshold that decides what a window *is* — code against data against
+compressed against encrypted — comes from `corpus/calibrate.py` measuring a
+ground-truth corpus, and is written to `corpus/calibration.json`. None of them
+is a number somebody liked the look of.
+
+This is a correctness rule, not a preference. A binary analyser that classifies
+by folklore constants produces confident, plausible, wrong answers, and the
+population that runs this tool is exactly the one that cannot afford them. Two
+consequences follow and are enforced rather than trusted:
+
+- **The measured file must ship.** `corpus/` is not in the wheel, so
+  `tools/build_ui.py` stages `calibration.json` into the package and the
+  release workflow fails the build if it is missing or is itself the fallback.
+  `packaging/binviz.spec` does the same for the frozen desktop build.
+- **Moving a threshold invalidates the analyses computed under the old one.**
+  The calibration feeds `cache.params_fingerprint()`, so re-running
+  `calibrate.py` re-analyses what it needs to and nothing else. A cached
+  verdict computed under thresholds that have since moved is precisely the
+  quiet wrong answer the rule exists to prevent.
+
+`signals._FALLBACK_CAL` exists only so the library imports in a checkout with
+no corpus built yet. It is **not a shipping mode**; `/api/config` reports which
+source is in force so that "am I running on the fallback?" is a question with
+an answer.
 
 ---
 
@@ -179,12 +211,13 @@ generated at a target OKLCH lightness/hue and validated against `--ink`
 for lightness band, chroma floor, OKLab ΔE under simulated protanopia and
 deuteranopia, normal-vision separation, and WCAG contrast.
 
-The palette change moved that surface *darker*, which raises every one of
-those contrast figures rather than lowering one, so the four categorical
-slots were left exactly as validated. Only the brand-tied values moved:
-byte class `null` tracks the panel, `0xff` is `--text`, and the
-brush-to-locate ink is `--alert` (`--rose` sits too close to the `high`
-class to survive a raster full of it).
+The categorical slots are used exactly as the validator produced them. Only
+the brand-tied values are chosen by hand: byte class `null` tracks the panel,
+`0xff` is `--text`, and the brush-to-locate ink is `--alert` — `--rose` sits
+too close to the `high` class to survive a raster full of it. Note that the
+chart surface is `--ink` rather than a lighter panel, which *raises* every
+contrast figure above, so darkening a surface is the safe direction and
+lightening one means re-running the validator.
 
 **Re-run the validator before changing any of them.** Three things that
 contradict what eyeballing suggests, learned doing it:
@@ -218,7 +251,7 @@ branding in one repo is how they drift.
 icon and nothing else reads it. The wheel's non-Windows window icon is the
 PNG, because that is what GTK and Qt take.
 
-> **`.icns` did not need a Mac after all.** `iconutil` is a container
+> **Generating `.icns` does not require a Mac.** `iconutil` is a container
 > tool — the file is a header, a length, and a run of PNGs under
 > four-character type codes, and the scaling on the way in is an ordinary
 > Lanczos downsample. `tools/make_icns.py` writes the same ten entries
@@ -228,8 +261,8 @@ PNG, because that is what GTK and Qt take.
 > emit the `.iconset` itself, so a Mac owner can regenerate the file the
 > canonical way and compare. `tests/test_packaging.py` walks the
 > container and checks every entry is a PNG of the size its type code
-> promises — the machine that would notice a malformed one is the machine
-> we do not have.
+> promises, because the platform that would notice a malformed one is the
+> platform this file is generated without.
 
 > **The window icon format is not cosmetic.** Handing the Windows backend a
 > PNG throws `System.ArgumentException` from inside .NET — an unhandled
@@ -272,144 +305,7 @@ PNG, because that is what GTK and Qt take.
 
 ---
 
-## 5. What is left to build
-
-Nothing here is a bug. In rough order:
-
-1. **First release** — see §7, which is owner-only.
-
-Done, and described in §3: the **macOS `.icns`** — written by
-`tools/make_icns.py` rather than by `iconutil`, so it did not need a Mac.
-Ten entries, five logical sizes at 1x and 2x, container walked and every
-payload checked by `tests/test_packaging.py`. What is still unverified is
-the last inch, and it is the same last inch as the rest of §8: nobody has
-seen it in a Dock.
-
-Done, and described in §2: the **PyInstaller spec** — `binviz.spec` +
-`launcher.py` in `packaging/`, README instructions, and
-`tests/test_packaging.py`. Built and run on Windows: 99 MB, with `probe`,
-`triage`, `serve` (UI mounted, deep links surviving a refresh, `/api`
-still 401 without the token) and the desktop window all exercised from
-the frozen bundle. numpy and pillow needed nothing beyond their official
-hooks as predicted; `collect_all` was required for capstone and lief as
-expected, and also for the pythonnet stack pywebview reaches WebView2
-through, which no import analysis can see.
-
----
-
-## 6. Settled decisions
-
-These were the open questions at the end of the work order. All four were
-decided **2026-08-07**, before the first release. They are recorded here with
-the reasoning rather than deleted, because each one is a thing a later
-maintainer will reach for and should have to argue *against*, not rediscover.
-
-- **`lief>=1.0,<1.1` stays tight.** *Decided: keep.* lief's API moves fast and
-  it is the component whose failure mode is a *plausible but wrong parse*
-  rather than an exception — the one class of error this tool must not make
-  quietly. Nothing else in a normal environment depends on lief, so the
-  resolution cost of a narrow range is near zero. The known price: **lief 1.1
-  will require a binviz release even if it turns out to be compatible.** That
-  is the cheap direction to be wrong in. The parser tests are a check on the
-  pin, not a substitute for it — they run against whatever is installed, so
-  they cannot vouch for a version nobody has run them on. To widen it later,
-  widen to `<2` only after running the suite against 1.1 itself.
-- **`--auth local` keeps its claim window.** *Decided: keep.* If no credential
-  exists, the first sign-in becomes the account. The startup banner warns in
-  four lines of `!!`, and `binviz passwd` closes the window ahead of time. The
-  alternative — refusing to start without a credential — locks out the desktop
-  user who only ever double-clicks an icon, which is the majority case for
-  `binviz app`. Note the scope: the claim window is a `--auth local` concern
-  only, and `local` is opt-in for shared machines. Revisit if the
-  shared-machine case ever becomes the common one; the trigger is that, not a
-  general unease about first-run trust.
-- **Two version numbers stay separate.** *Decided: keep.*
-  `binviz.__version__` is the distribution version (pyproject reads it).
-  `cache.TOOL_VERSION` is the *analysis* version and feeds the cache
-  fingerprint — bumping it discards every cached analysis on every install, so
-  a UI-only release must not touch it. They read the same today, which is
-  what makes collapsing them look free; it is not, and the next
-  frontend-only patch is where you would find out. The calibration thresholds
-  now feed that fingerprint too — the finer-grained version of the same idea:
-  re-running `corpus/calibrate.py` invalidates the analyses whose thresholds
-  actually moved, without claiming the analysis code changed.
-- **`README.md`'s status section.** *Decided: done.* It said "Phase 3
-  complete" with a P0–P3 bullet list while `HANDOVER.md` said Phase 12. It is
-  now a feature summary with no phase numbering at all — phase numbers are
-  internal vocabulary and go stale by construction, and the first screen of a
-  public repo should say what the tool does. `HANDOVER.md` keeps the phase
-  history, which is where a maintainer looks for it and a visitor does not.
-
----
-
-## 7. Publishing (owner-only)
-
-`.github/workflows/publish.yml` publishes to PyPI with **Trusted
-Publishing** — OIDC, no API token anywhere in the repo or its secrets. For a
-tool in this space a stolen publish token is the worst available outcome:
-the next `pip install binviz` would hand an attacker's code to the exact
-population that opens hostile files for a living.
-
-**One-time setup, before the workflow can run:**
-
-```
-PyPI -> project -> Publishing -> Add a new pending publisher
-  Owner: karankantaria    Repository: Striate
-  Workflow: publish.yml   Environment: pypi
-```
-
-The environment name is half of the identity PyPI checks, and it is where a
-required reviewer can be attached so a publish cannot happen without a human.
-
-Three jobs: `build` (stage the UI, run the suite, build both distributions,
-assert the wheel contains the UI + licence), `floors` (run the suite against
-the *oldest* version every dependency range allows), and `publish`, which
-needs both and only fires on a published release.
-
-> **The workflow has never actually run.** No CI run has happened, so
-> treat the first `workflow_dispatch` as part of the release, not as a
-> formality.
-
-It has now been rehearsed step by step on Windows, and **it would have
-failed on its first run.** Three gaps, all fixed in the workflow:
-
-- **No corpus.** `corpus/out/` is generated and gitignored, so a fresh
-  checkout has no samples, and `tests/conftest.py` *fails* rather than
-  skips on a missing required one — 17 of the 20 are required. Verified by
-  hiding `corpus/out/` and running the suite: **168 failed, 40 errors.**
-  Both jobs now build the corpus after installing (it needs `zig cc` from
-  the `ziglang` dev dependency). `upx` turns out to be preinstalled on the
-  Ubuntu runner image, at 4.x rather than the 5.2.0 `manifest.json`
-  records — provenance, not a checksum, and every `hello_upx` assertion is
-  a range or a verdict.
-- **The frontend suite never ran.** 87 tests, including the enforcement
-  half of §4's conventions (one `innerHTML`, every pane reachable). The
-  build job now runs `npm run test` before building.
-- **Node 22 → 24.** `npm run test` is `node --test test/*.test.ts`, which
-  needs TypeScript type stripping; 24 is what those 87 tests are green on.
-
-What the rehearsal *did* confirm, unchanged: `npm ci` agrees with the
-lockfile; `tools/build_ui.py --skip-build` stages 6 files; `python -m
-build` produces both distributions; the wheel check passes verbatim (45
-files, 4 UI assets, licence present); and every floor pin in the `floors`
-job has a cp311 linux-x86_64 wheel on PyPI — asked of the index directly,
-because pip's `--platform` emulation gives false conflicts on legacy
-manylinux aliases.
-
-Still unrehearsable locally, and therefore still first-run risk: the
-`floors` job's *suite* (needs Python 3.11 on Linux), whether upx 4.x packs
-the zig-built sample as cleanly as 5.2.0, and the `publish` job — OIDC
-against PyPI cannot be exercised anywhere but CI.
-
-Exact versions the suite is green against live in `constraints-dev.txt`:
-
-```sh
-pip install -e ".[dev,app]" -c constraints-dev.txt
-```
-
----
-
-## 8. Known limitations
+## 5. Known limitations
 
 Deliberate, documented, and worth knowing before someone "fixes" them:
 
@@ -432,9 +328,12 @@ Deliberate, documented, and worth knowing before someone "fixes" them:
   serves its own `index.html` with no bootstrap meta, so the frontend sees
   no auth mode and skips the login screen; dev authenticates through the
   proxy instead (`BINVIZ_TOKEN`). `local` mode is a packaged-build feature.
-- **Everything was verified on Windows.** The Linux/macOS pywebview
-  backends, and the `0o600` credential mode (skipped as advisory on
-  Windows), have not been exercised on their own platforms.
+- **The desktop layer is verified on Windows only.** The test suite runs on
+  Linux in CI as well, but `binviz app` does not: the Linux and macOS
+  pywebview backends, the macOS `.app` bundle, and the `0o600` credential
+  mode (skipped as advisory on Windows) have not been exercised on their own
+  platforms. The wheel and the CLI are not affected — those are what CI
+  covers.
 - **The desktop file dialog's last inch is unverified.** Its code path is
   tested with a fake window — opens at `--root`, single selection,
   re-entrancy blocked — but a dialog actually returning a path needs a human
@@ -442,16 +341,21 @@ Deliberate, documented, and worth knowing before someone "fixes" them:
 
 ---
 
-## 9. Repo map
+## 6. Repo map
 
 ```
-RELEASE.md              this file — shipping, branding, what is left
-HANDOVER.md             engineering history + the gotchas list
-SECURITY.md             public posture and disclosure route
-PLAN.md                 analysis design (code's §5.x references)
+ARCHITECTURE.md         this file — what ships, branding, conventions
+README.md               what the tool is and how to run it
+SECURITY.md             security posture and disclosure route
 LICENSE                 MIT
+pyproject.toml          packaging metadata; dependency ranges and why
 constraints-dev.txt     exact versions the suite is green against
 .github/workflows/      publish.yml — Trusted Publishing
+corpus/                 ground-truth samples: build.py compiles them with
+                        zig cc, calibrate.py measures the thresholds (§2.1)
+tests/                  the Python suite; conftest.py gates on the corpus
+docs/plates/            rendered examples used by README.md
+docs/screenshots/       UI screenshots (shot list; images not committed yet)
 packaging/
   icons/                canonical branding (§3)
   binviz.spec           PyInstaller spec: onedir desktop build (§2)
@@ -474,8 +378,10 @@ src/binviz/
 ## Appendix — decoding `§` references in code comments
 
 Comments and test docstrings cite a security/UI work order that has been
-retired now that every item in it is closed. `§5.x` references point at
-`PLAN.md` and still resolve; the rest decode as:
+retired now that every item in it is closed. The design document those
+comments once cited as `plan §5.x` has been retired too — its one
+load-bearing argument, that thresholds are measured rather than chosen, is
+§2.1 above. The rest decode as:
 
 | Ref | What it was |
 |---|---|
