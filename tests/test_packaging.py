@@ -110,7 +110,20 @@ def test_a_double_clicked_executable_opens_the_window():
     """No argv at all is the double-click case; passing it through
     unchanged exits 2 with argparse usage text, into a console window that
     closes before anyone can read it."""
-    assert '["app"]' in _code(LAUNCHER)
+    assert '"app"' in _code(LAUNCHER)
+
+
+def test_a_double_clicked_executable_asks_for_the_credential():
+    """§2.4: the window is the launch path with no terminal behind it, so
+    it is the one that must not sign the user in silently. `binviz app`
+    typed into a shell keeps its own `--auth none` default — this pins the
+    *double-click* default only, which is why it lives in the launcher
+    rather than in the parser."""
+    code = _code(LAUNCHER)
+    assert '"--auth", "local"' in code, \
+        "a double-clicked executable must show the sign-in screen (§2.4)"
+    assert "sys.argv[1:]" in code and "argv if argv" in code, \
+        "an explicit --auth on the command line must still win"
 
 
 @pytest.mark.skipif(not (ROOT / "packaging" / "icons" / "icon.ico").is_file(),

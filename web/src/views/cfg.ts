@@ -464,13 +464,13 @@ export class CfgView {
     ctx.setTransform(dpr * t.scale, 0, 0, dpr * t.scale, dpr * t.tx, dpr * t.ty);
     const showText = t.scale >= TEXT_MIN_SCALE;
 
-    // --text for the disassembly, --ink for the block fill: the block is a
-    // well cut into the pane, so it is filled with the page colour and the
-    // instructions inside it are set in primary ink.
+    // --text for the disassembly, --void for the block fill: the block is a
+    // well cut into the pane, so it is filled with the page colour showing
+    // through, and the instructions inside it are set in primary ink.
     const ink = this.css("--text");
     const ink2 = this.css("--muted");
     const muted = this.css("--muted");
-    const surface = this.css("--ink");
+    const surface = this.css("--void");
     const border = this.css("--baseline");
     const accent = this.css("--rose");
     const selFill = this.css("--select-fill");

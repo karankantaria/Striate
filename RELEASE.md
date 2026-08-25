@@ -70,9 +70,15 @@ built wheel for exactly that reason.
 `pip install pyinstaller`, `python tools/build_ui.py`, `pyinstaller
 packaging/binviz.spec` → `dist/binviz/` (~100 MB, numpy and lief). The
 entry point is `packaging/launcher.py`, which is the wheel's CLI with one
-addition — **no argv means `app`**, because a double-clicked executable
-passes none and bare `binviz` exits 2 into a console that closes
-instantly. onedir, `upx=False` and `console=True` are all argued in the
+addition — **no argv means `app --auth local`**, because a double-clicked
+executable passes none and bare `binviz` exits 2 into a console that closes
+instantly. The `--auth local` half of that default is the §2.4 argument
+applied to the one launch path with no terminal behind it: `binviz app`
+typed into a shell is a deliberate act and keeps the parser's own
+`--auth none`, but a double-click establishes nothing, so the window asks
+for the credential rather than signing you in invisibly. An explicit
+`--auth none` on the command line still wins. onedir, `upx=False` and
+`console=True` are all argued in the
 spec's docstring and pinned by `tests/test_packaging.py`; the short
 version is that each safe value costs something, so drift has a
 direction. The spec **refuses to build** without a staged frontend — the
@@ -126,14 +132,25 @@ is carried by size and tracking, never by fading the ink.
 
 | Token | Hex | Role |
 |-------|-----|------|
-| `--ink` | `#1A1A1D` | page background, **and** the recessed fields/wells on a card |
-| `--plum` | `#3B1C32` | cards / panes; **the chart surface**; the icon tile |
+| `--void` | `#121215` | the page, one step below `--ink`; wells and inputs |
+| `--ink` | `#1A1A1D` | panes, toolbar, dialogs, tooltips; **the chart surface** |
+| `--plum` | `#3B1C32` | raised: hovered rows, chips, badges, the sign-in card, the icon tile |
 | `--deep` | `#6A1E55` | low-entropy band, pressed button, "EOF" cap |
 | `--rose` | `#A64D79` | buttons, focus, high-entropy band, the curve stroke |
 | `--text` | `#F7EFF4` | primary text (15.4:1 on ink, 13.3:1 on plum); "offset 0" cap |
 | `--muted` | `#C98CA8` | labels, metadata (6.5:1 on ink, 5.6:1 on plum) |
 | `--alert` | `#FF7A8A` | **every error signal** (6.0:1 on plum) |
 | `--hair` | `rgba(166,77,121,0.30)` | hairline borders |
+
+**`--plum` is not the pane surface, and that is the point.** The ramp's
+lightest structural value is also its most saturated. On one 380px sign-in
+card it reads as the brand; behind nine panes it reads as a lit screen. So
+the surfaces run *down* from `--ink` — `--void` page, `--ink` panes, wells
+back to `--void` — and `--plum` is spent on small raised things where the
+saturation is a signal. `--void` exists because a pane cannot be `--ink`
+and sit on `--ink`. The sign-in screen is the documented exception: it
+keeps the design reference's own `--ink` page and `--plum` card, so the app
+shifts a step darker when the card dismisses.
 
 **Errors are `--alert`, not `--rose`.** `--rose` is the primary action, and
 an error must not be the colour of the button that just failed. `--alert` is
@@ -158,7 +175,7 @@ text on `--rose` is `--text`, and text on `--alert` is `--ink`.
 
 The byte-class and signal-series palettes are painted into canvases, so they
 are not CSS tokens — they live in `web/src/colormap.ts`. Every value was
-generated at a target OKLCH lightness/hue and validated against `--plum`
+generated at a target OKLCH lightness/hue and validated against `--ink`
 for lightness band, chroma floor, OKLab ΔE under simulated protanopia and
 deuteranopia, normal-vision separation, and WCAG contrast.
 
@@ -438,7 +455,8 @@ constraints-dev.txt     exact versions the suite is green against
 packaging/
   icons/                canonical branding (§3)
   binviz.spec           PyInstaller spec: onedir desktop build (§2)
-  launcher.py           its entry point — the CLI, defaulting to `app`
+  launcher.py           its entry point — the CLI, defaulting to
+                        `app --auth local`
 tools/build_ui.py       stages web/dist + icons + calibration into the package
 tools/make_icns.py      derives packaging/icons/icon.icns from the master
 web/

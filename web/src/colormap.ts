@@ -70,7 +70,7 @@ export const GRAY: Lut = (() => {
    One palette, not two. RELEASE.md §3 fixes Striate as dark-only, so the
    light theme and its second set of chart colours are gone; what is left
    is stepped against the one surface it will ever be drawn on
-   (`--plum` #3B1C32).
+   (`--ink` #1A1A1D).
 
    The 2026 palette change moved that surface darker, which *raises* every
    contrast figure below rather than lowering one, so slots 1–4 were left
@@ -115,7 +115,7 @@ export const BYTE_CLASS_NAMES = [
    and mark-to-mark separation is what the CVD checks above measure. The
    legend carries the names either way. */
 export const BYTE_CLASS_COLORS: string[] = [
-  "#33192b",   // null       recedes into the panel
+  "#171319",   // null       recedes into the panel
   "#1e8fee",   // printable
   "#017634",   // whitespace
   "#d77800",   // control

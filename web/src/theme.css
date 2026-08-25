@@ -5,7 +5,7 @@
    here is duplicated and nothing can drift out of step. The byte-class and
    series colours live in colormap.ts because they are painted into
    canvases rather than applied as CSS — they were stepped against
-   `--plum` and validated for colour-vision deficiency, so re-run the
+   `--ink` and validated for colour-vision deficiency, so re-run the
    validator if you touch them.
 
    Type is all-monospace, per RELEASE.md, from the system stack. No
@@ -25,8 +25,9 @@
   color-scheme: dark;
 
   /* RELEASE.md §3, exactly */
-  --ink: #1a1a1d;            /* page, and the recessed fields on a card */
-  --plum: #3b1c32;           /* cards / panes — the chart surface — icon tile */
+  --void: #121215;           /* the page, one step below --ink */
+  --ink: #1a1a1d;            /* panes, toolbar, dialogs — the chart surface */
+  --plum: #3b1c32;           /* raised: chips, hovers, the sign-in card, the tile */
   --deep: #6a1e55;           /* low-entropy band, pressed button, "EOF" cap */
   --rose: #a64d79;           /* buttons, focus, high entropy, the curve stroke */
   --text: #f7eff4;           /* primary text; the "offset 0" cap */
@@ -38,12 +39,19 @@
   --alert: #ff7a8a;
   --hair: rgba(166, 77, 121, 0.30);
 
-  /* The structural names the rest of this sheet uses. --field is --ink
-     rather than a fifth value: a recessed well inside a --plum card reads
-     by being the page colour showing through, which is also how the login
-     card does it. */
-  --field: var(--ink);
-  --grid: #4a2440;           /* one step off the panel: hover, chips */
+  /* Why --plum is not the pane surface. The ramp's lightest structural
+     value is also its most saturated, and a workspace is nine panes: at
+     that area a colour that reads as "brand" on a 380px sign-in card reads
+     as a lit screen. So the surfaces run *down* from --ink and --plum is
+     spent on small raised things — a hovered row, a chip, a badge, the
+     card itself — where the saturation is a signal rather than a wash.
+     --void exists because a pane cannot be --ink and sit on --ink; the
+     page has to go one step below for the pane to read as a card.
+
+     Everything else is the same idea one level down: a well is the page
+     showing through a pane, and a hover is one step up toward the brand. */
+  --field: var(--void);
+  --grid: var(--plum);       /* one step off the panel: hover, chips */
   --baseline: rgba(201, 140, 168, 0.34);
   --border: var(--hair);
   --select-fill: rgba(166, 77, 121, 0.28);
@@ -62,7 +70,7 @@
 html, body, #app { height: 100%; margin: 0; }
 
 body {
-  background: var(--ink);
+  background: var(--void);
   color: var(--text);
   font: 13px/1.45 var(--mono);
   -webkit-font-smoothing: antialiased;
@@ -76,7 +84,7 @@ body {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--plum);
+  background: var(--ink);
 }
 #toolbar .brand { font-weight: 700; letter-spacing: 0.04em; margin-right: 4px; }
 #toolbar .spacer { flex: 1; }
@@ -85,7 +93,7 @@ body {
   padding: 5px 8px;
   border: 1px solid var(--baseline);
   border-radius: 6px;
-  background: var(--ink);
+  background: var(--void);
   color: var(--text);
   font: inherit;
 }
@@ -93,7 +101,7 @@ button {
   padding: 5px 10px;
   border: 1px solid var(--baseline);
   border-radius: 6px;
-  background: var(--plum);
+  background: var(--ink);
   color: var(--text);
   font: inherit;
   cursor: pointer;
@@ -103,7 +111,7 @@ select {
   padding: 3px 6px;
   border: 1px solid var(--baseline);
   border-radius: 6px;
-  background: var(--plum);
+  background: var(--ink);
   color: var(--text);
   font: inherit;
 }
@@ -130,7 +138,7 @@ select {
   display: flex; gap: 2px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--plum);
+  background: var(--ink);
 }
 #workspace-tabs[hidden] { display: none; }
 .wtab {
@@ -144,7 +152,7 @@ select {
   letter-spacing: 0.03em;
   cursor: pointer;
 }
-.wtab:hover { color: var(--muted); border-bottom-color: var(--baseline); }
+.wtab:hover { color: var(--text); border-bottom-color: var(--baseline); }
 .wtab[aria-selected="true"] {
   color: var(--text); border-bottom-color: var(--rose);
 }
@@ -259,7 +267,7 @@ select {
   padding: 1px 4px;
   border: 1px solid var(--baseline);
   border-radius: 4px;
-  background: var(--plum);
+  background: var(--ink);
   color: var(--text);
   font: inherit;
   font-size: 11px;
@@ -268,7 +276,7 @@ select {
 
 .pane {
   display: flex; flex-direction: column; min-height: 0; min-width: 0;
-  background: var(--plum);
+  background: var(--ink);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -311,7 +319,7 @@ select {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--alert);
-  background: var(--plum);
+  background: var(--ink);
   border-top: 1px solid var(--alert);
   overflow-wrap: anywhere;
 }
@@ -464,7 +472,7 @@ select {
 .offset-input {
   width: 76px; padding: 1px 4px;
   border: 1px solid var(--baseline); border-radius: 4px;
-  background: var(--plum); color: var(--text);
+  background: var(--ink); color: var(--text);
   font: 11px ui-monospace, Consolas, monospace;
 }
 
@@ -536,7 +544,7 @@ select {
 }
 .empty-samples .sample {
   padding: 3px 9px; font: inherit; font-size: 12px;
-  color: var(--muted); background: var(--plum);
+  color: var(--muted); background: var(--ink);
   border: 1px solid var(--baseline); border-radius: 4px; cursor: pointer;
 }
 .empty-samples .sample:hover { border-color: var(--rose); color: var(--text); }
@@ -552,7 +560,7 @@ select {
   padding: 18px 22px 16px;
   border: 1px solid var(--baseline);
   border-radius: 10px;
-  background: var(--plum);
+  background: var(--ink);
   color: var(--text);
   font: inherit;
 }
@@ -573,7 +581,7 @@ select {
 #help-dialog kbd {
   padding: 1px 6px; min-width: 20px; text-align: center;
   border: 1px solid var(--baseline); border-radius: 4px;
-  background: var(--ink); color: var(--text);
+  background: var(--void); color: var(--text);
   font: 11px ui-monospace, Consolas, monospace;
 }
 #help-dialog .kbd-sep { color: var(--muted); }
@@ -585,7 +593,7 @@ select {
 
 #tooltip {
   position: fixed; z-index: 10; pointer-events: none;
-  background: var(--plum); color: var(--text);
+  background: var(--ink); color: var(--text);
   border: 1px solid var(--baseline); border-radius: 6px;
   padding: 5px 8px; font-size: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
@@ -608,7 +616,14 @@ body.dragover::after {
    design reference. Every animated rule is scoped to `.boot`, which
    main.ts sets only when JS runs *and* prefers-reduced-motion is not
    set — so without it the screen renders in its final state rather than
-   in a broken half-state. Do not lift these rules out of `.boot`. */
+   in a broken half-state. Do not lift these rules out of `.boot`.
+
+   This screen keeps the reference's own surface stack — --ink page,
+   --plum card — rather than the app's. It is one 380px card on an empty
+   screen, which is the size at which --plum is the brand rather than a
+   wash, and it is the only place the mark appears at rest. The app
+   shifts a step darker when the card dismisses; that is the workspace
+   receding, not a second palette. */
 
 .login-screen {
   position: fixed; inset: 0; z-index: 30;
@@ -752,7 +767,10 @@ body.dragover::after {
   width: 100%; padding: 11px 13px;
   font: inherit; font-size: 15px;
   color: var(--text);
-  background: var(--field);
+  /* --ink, not --field: this is the one screen where --plum *is* the
+     surface, so the well one step below it is --ink. --field is a step
+     below a pane, and there are no panes here. */
+  background: var(--ink);
   border: 1px solid var(--hair);
   border-radius: 5px;
   outline: none;
