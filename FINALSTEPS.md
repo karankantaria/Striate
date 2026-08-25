@@ -4,7 +4,8 @@ The short list between here and a published release. `RELEASE.md` §5 is the
 work register and §7 is the publishing procedure; this file is the running
 checklist, ticked as things land.
 
-Started **2026-08-06**. Nothing in this file is committed yet.
+Started **2026-08-06**. Everything under "Done" and "Decided" is
+committed, through `63fff79`. Updated **2026-08-25**.
 
 ---
 
@@ -62,12 +63,17 @@ Started **2026-08-06**. Nothing in this file is committed yet.
 
 ## The release (owner-only, `RELEASE.md` §7)
 
-- [ ] **PyPI pending publisher**, before anything else can run:
-      owner `karankantaria`, repository `Striate`, workflow `publish.yml`,
-      environment `pypi`. Attach a required reviewer there if you want a
-      human in the loop.
+- [x] **PyPI pending publisher** — registered **2026-08-25**. Project
+      `binviz`, owner `karankantaria`, repository `Striate`, workflow
+      `publish.yml`, environment `pypi`. Matches the `environment:` block in
+      the workflow, which is half the identity PyPI checks. No required
+      reviewer attached; add one on the `pypi` environment if a publish
+      should need a human.
 - [ ] **`workflow_dispatch` rehearsal** — runs `build` + `floors` without
       publishing. This is the real test of the three fixes above.
+      **Push first:** the workflow builds what is on `origin/main`, so a
+      dispatch with the working tree uncommitted rehearses the previous
+      commit and proves nothing about the code being tagged.
 - [ ] **Tag and publish.**
 - [ ] **Release notes mention the one-time re-analysis.** The cache
       fingerprint moves (`d4480e63…` → `62b4fd7b…`), so the first open after
@@ -104,12 +110,17 @@ mistaken for tested:
 
 ## Housekeeping
 
-- [ ] **Nothing is committed.** 13 modified, 4 new (`FINALSTEPS.md`,
-      `packaging/icons/icon.icns`, `tools/make_icns.py`,
-      `tests/test_calibration_packaging.py`).
+- [ ] **Working tree: 7 modified, nothing new.** Two changes, both
+      documented and tested, neither yet on `origin/main`:
+      the **palette re-layering** (a new `--void` token; surfaces run down
+      from `--ink`, `--plum` demoted to small raised elements,
+      `colormap.ts` validated against `--ink`) and the **double-click
+      default**, now `app --auth local` rather than bare `app`. These are
+      what the rehearsal above needs pushed.
 - [ ] **`.venv` has three extras** installed for this work and absent from
       `pyproject.toml`: `pyinstaller`, `build`, `pyyaml`. Uninstall if you
       want the venv back to the declared set.
 
-Green as of the last run: **450 passed / 5 skipped** (Python),
-**87 passed / 0 failed** (frontend).
+Green as of **2026-08-25**: **451 passed / 5 skipped** (Python; the 6
+deselected are the `perf` marker, excluded by `pyproject.toml`'s
+`addopts`), **87 passed / 0 failed** (frontend).
