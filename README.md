@@ -34,13 +34,6 @@ same selection. Static analysis only: samples are parsed, never executed.
 
 ## Screenshots
 
-<!-- UI SCREENSHOTS GO HERE.
-
-     Capture 1600x1000 or wider with a real sample open; corpus/out/hello_upx
-     is the most legible subject, because the packed region reads as noise
-     next to the unpacked stub. Save into docs/screenshots/ using the names
-     below, then delete the comment markers around the lines that follow.
-     docs/screenshots/README.md has the full shot list and settings.
 
 ![Overview workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/overview.png)
 ![Bytes workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/bytes.png)
