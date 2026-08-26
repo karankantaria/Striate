@@ -102,10 +102,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/karankantaria/Striate"
-Source = "https://github.com/karankantaria/Striate"
-Issues = "https://github.com/karankantaria/Striate/issues"
-Security = "https://github.com/karankantaria/Striate/blob/main/SECURITY.md"
+Homepage = "https://github.com/karankantaria/binviz"
+Source = "https://github.com/karankantaria/binviz"
+Issues = "https://github.com/karankantaria/binviz/issues"
+Security = "https://github.com/karankantaria/binviz/blob/main/SECURITY.md"
 
 [project.scripts]
 binviz = "binviz.cli:main"

@@ -1,8 +1,12 @@
-# Striate
+# binviz
 
 Binary visualiser & triage tool: linked interactive views (entropy, histograms,
 image/dot-plot surfaces, control-flow graphs) over a single shared
 address-space model.
+
+```sh
+pipx install binviz && binviz serve
+```
 
 ## What it does
 
@@ -34,13 +38,13 @@ same selection. Static analysis only: samples are parsed, never executed.
 
 ## Screenshots
 
-![Overview workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/overview.png)
+![Overview workspace](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/screenshots/overview.png)
 
-![Bytes workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/bytes.png)
+![Bytes workspace](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/screenshots/bytes.png)
 
-![Patterns workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/patterns.png)
+![Patterns workspace](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/screenshots/patterns.png)
 
-![Code workspace](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/screenshots/code.png)
+![Code workspace](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/screenshots/code.png)
 
 ### Plates
 
@@ -49,14 +53,14 @@ regenerate with `python docs/make_plates.py`.
 
 | A static binary | The same program, UPX-packed |
 |---|---|
-| ![Hilbert byte-class, static](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/hilbert_byteclass_static.png) | ![Hilbert byte-class, packed](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/hilbert_byteclass_upx.png) |
+| ![Hilbert byte-class, static](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/plates/hilbert_byteclass_static.png) | ![Hilbert byte-class, packed](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/plates/hilbert_byteclass_upx.png) |
 | Code, strings and padding separate into visible territories. | Structure collapses into uniform noise — the signature of packing. |
-| ![Entropy, static](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/entropy_hello_static.png) | ![Entropy, packed](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/entropy_hello_upx.png) |
+| ![Entropy, static](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/plates/entropy_hello_static.png) | ![Entropy, packed](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/plates/entropy_hello_upx.png) |
 | Windowed entropy stays banded and low. | Flat and high, right up to the unpacking stub. |
 
 | Right row stride | Wrong row stride |
 |---|---|
-| ![RGB bars, correct stride](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/image_rgb_bars.png) | ![RGB bars, wrong stride](https://raw.githubusercontent.com/karankantaria/Striate/main/docs/plates/image_rgb_bars_wrong_stride.png) |
+| ![RGB bars, correct stride](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/plates/image_rgb_bars.png) | ![RGB bars, wrong stride](https://raw.githubusercontent.com/karankantaria/binviz/main/docs/plates/image_rgb_bars_wrong_stride.png) |
 
 Same bytes, one number different. That is why the stride suggester exists: the
 wrong row stride turns a photograph into diagonal noise, and you conclude there
@@ -285,7 +289,7 @@ is deliberately not done yet, and how to report a vulnerability privately.**
 
 ## Licence
 
-MIT — see [LICENSE](https://github.com/karankantaria/Striate/blob/main/LICENSE).
+MIT — see [LICENSE](https://github.com/karankantaria/binviz/blob/main/LICENSE).
 
 The corpus cross-compiles ELF samples with `zig cc`, so no Linux toolchain is
 needed on Windows/macOS — samples are parsed, never executed.

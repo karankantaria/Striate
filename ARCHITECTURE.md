@@ -1,6 +1,6 @@
-# Striate — architecture and conventions
+# binviz — architecture and conventions
 
-How Striate is put together: what ships and why, the branding every surface
+How binviz is put together: what ships and why, the branding every surface
 inherits, the conventions any new screen must follow, and the limitations that
 are deliberate rather than unfinished.
 
