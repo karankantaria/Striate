@@ -1,4 +1,4 @@
-# Striate
+# binviz
 
 Binary visualiser & triage tool: linked interactive views (entropy, histograms,
 image/dot-plot surfaces, control-flow graphs) over a single shared
